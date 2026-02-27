@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
 )
 
 type Section struct {
@@ -26,7 +26,7 @@ func (s Section) View() string {
 		subtitle = fmt.Sprintf(" %s ", s.subtitle)
 		buf.WriteString(subtitle)
 	}
-	topBarLength := s.viewport.Width - lipgloss.Width(s.title) - lipgloss.Width(subtitle) - 3
+	topBarLength := s.viewport.Width() - lipgloss.Width(s.title) - lipgloss.Width(subtitle) - 3
 	buf.WriteString(topBarStyle.Render(strings.Repeat("─", max(0, topBarLength)) + "╗"))
 	buf.WriteString("\n")
 	buf.WriteString(s.viewport.View())
@@ -34,7 +34,7 @@ func (s Section) View() string {
 }
 
 func NewSection(title string, width, height int) Section {
-	vp := viewport.New(width-1, height-1)
+	vp := viewport.New(viewport.WithWidth(width-1), viewport.WithHeight(height-1))
 	vp.Style = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
 		BorderForeground(borderColor).
@@ -48,14 +48,14 @@ func (s *Section) SetContent(content string) {
 }
 
 func (s *Section) SetDimensions(width, height int) {
-	s.viewport.Width = width
-	s.viewport.Height = height
+	s.viewport.SetWidth(width)
+	s.viewport.SetHeight(height)
 }
 
 func (s *Section) LineUp(lines int) {
-	s.viewport.LineUp(lines)
+	s.viewport.ScrollUp(lines)
 }
 
 func (s *Section) LineDown(lines int) {
-	s.viewport.LineDown(lines)
+	s.viewport.ScrollDown(lines)
 }

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 type StatView int
@@ -109,12 +109,11 @@ func (ctx *ProgramContext) ResetContext(explainPlan ExplainPlan, model Model) {
 func StatusLineStyles() StatusStyles {
 
 	color_a := lipgloss.Color("#9999bb")
-	color_b := lipgloss.Color("#452297")
-	color_c := lipgloss.Color("#000000")
+	color_c := lipgloss.Color("#1E2030")
 
+	value := lipgloss.NewStyle().Background(color_a).Foreground(color_c)
 	normal := lipgloss.NewStyle().Background(color_a).Foreground(color_c)
-	altNormal := lipgloss.NewStyle().Background(color_c).Foreground(color_a)
-	value := lipgloss.NewStyle().Background(color_a).Foreground(color_b)
+	altNormal := lipgloss.NewStyle().Foreground(color_a).Background(color_c)
 
 	return StatusStyles{
 		Value:     value,

@@ -9,7 +9,6 @@ import (
 	"text/template"
 
 	sprig "github.com/Masterminds/sprig/v3"
-	tea "github.com/charmbracelet/bubbletea"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/spf13/cobra"
 	ini "github.com/vaughan0/go-ini"
@@ -47,7 +46,7 @@ func main() {
 
 			source := Source{sourceType: SOURCE_FILE, fileName: args[0]}
 
-			if _, err := RunProgram(source, tea.WithAltScreen()).Run(); err != nil {
+			if _, err := RunProgram(source).Run(); err != nil {
 				fmt.Println("Error running program:", err)
 				os.Exit(1)
 			} else {
@@ -72,7 +71,7 @@ func main() {
 				source = Source{sourceType: SOURCE_PGEX}
 			}
 
-			if _, err := RunProgram(source, tea.WithAltScreen()).Run(); err != nil {
+			if _, err := RunProgram(source).Run(); err != nil {
 				fmt.Println("Error running program:", err)
 				os.Exit(1)
 			} else {

@@ -8,15 +8,17 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
-	"pg-explain/sqlsplit"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/chriserin/pg_explain/sqlsplit"
 
 	"github.com/charmbracelet/x/ansi"
 )
 
 var extension string = ".pgex"
+var defaultPgexDir = "_pgex"
 
 type QueryRun struct {
 	query            string
@@ -25,8 +27,6 @@ type QueryRun struct {
 	pgexPointer      string
 	settings         []Setting
 }
-
-var defaultPgexDir = "_pgex"
 
 func CreatePgexDir() (string, error) {
 	workingDir, _ := os.Getwd()

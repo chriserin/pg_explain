@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/acarl005/stripansi"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 )
 

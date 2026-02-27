@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/stopwatch"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/stopwatch"
 )
 
 // keyMap defines a set of keybindings. To work for help it must satisfy
@@ -265,7 +265,7 @@ func (s Source) View(ctx ProgramContext) string {
 	if s.sourceType == SOURCE_FILE {
 		return ctx.StatusStyles.AltNormal.Render(fmt.Sprintf("FILE - %s", s.DisplayName()))
 	} else if s.sourceType == SOURCE_PGEX {
-		return ctx.StatusStyles.AltNormal.Render(fmt.Sprintf("PGEX - %s - %s", s.FileDate(), s.DisplayName()))
+		return ctx.StatusStyles.AltNormal.UnsetBackground().Render(fmt.Sprintf("PGEX - %s - %s", s.FileDate(), s.DisplayName()))
 	} else {
 		return "STDIN"
 	}
@@ -410,7 +410,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -460,7 +460,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ReExecute):
 			if m.originalSource.sourceType == SOURCE_FILE {
 				m.loading = true
-				m.stopwatch = stopwatch.NewWithInterval(time.Millisecond * 100)
+				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteQueryCmd(m.originalSource.fileName, m.nextRunSettings))
 			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
@@ -485,7 +485,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		m.loading = true
-		m.stopwatch = stopwatch.NewWithInterval(time.Millisecond * 100)
+		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 		return m, tea.Batch(m.stopwatch.Init(), ExecuteQueryCmd(m.source.fileName, m.nextRunSettings))
 	case executeQueryMsg:
 		UpdateModel(&m, msg.queryRun)
@@ -593,7 +593,14 @@ func displayedNodes(nodes []PlanNode, ctx ProgramContext) []PlanNode {
 	return resultNodes
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	content := m.renderView()
+	view := tea.NewView(content)
+	view.AltScreen = true
+	return view
+}
+
+func (m Model) renderView() string {
 	var buf strings.Builder
 
 	var spinnerView string
@@ -608,11 +615,12 @@ func (m Model) View() string {
 
 	spaceAvailable := m.ctx.Width - ansi.StringWidth(sourceView)
 
-	buf.WriteString(fmt.Sprintf("%*s%*s\n", spaceAvailable-10, m.ctx.StatDisplay.String(), 10, ""))
+	buf.WriteString(fmt.Sprintf("%*s%*s", spaceAvailable-10, m.ctx.StatDisplay.String(), 10, ""))
+	buf.WriteString("\n")
 
 	statusLine := m.StatusLine.View(m)
 	buf.WriteString(statusLine)
-	buf.WriteString(HeadersView(m.ctx, m.ctx.Width-ansi.StringWidth(statusLine)-1))
+	buf.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#1E2030")).Render(HeadersView(m.ctx, m.ctx.Width-ansi.StringWidth(statusLine)-1)))
 	buf.WriteString("\n")
 
 	for i, node := range m.DisplayNodes {
