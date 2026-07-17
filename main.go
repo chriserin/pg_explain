@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,8 +30,6 @@ var cliOptions struct {
 var ConnConfig pgx.ConnConfig
 var PGEnvvars map[string]string = make(map[string]string)
 var ConnString string
-
-var zeroSourcetype SourceType
 
 func main() {
 	var cmdExec = &cobra.Command{
@@ -218,7 +217,7 @@ func appendConfigFromFile(path string) error {
 	return nil
 }
 
-func ExecuteExplain(query string, settings []Setting) (string, error) {
+func ExecuteExplain(query string, settings []Setting, ctx context.Context) (string, error) {
 	pgConn := Connection{
 		connConfig: ConnConfig,
 	}
@@ -236,5 +235,5 @@ func ExecuteExplain(query string, settings []Setting) (string, error) {
 			return "", err
 		}
 	}
-	return pgConn.ExecuteExplain(query)
+	return pgConn.ExecuteExplain(query, ctx)
 }

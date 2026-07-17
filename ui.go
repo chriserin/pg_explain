@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"slices"
@@ -183,6 +184,7 @@ type Model struct {
 	nextRunSettings      []Setting
 	error                error
 	errorViewport        Section
+	explainCancelFn      context.CancelFunc
 }
 
 func InitModel(source Source) Model {
@@ -328,14 +330,14 @@ type errorMsg struct {
 	error error
 }
 
-func ExecuteQueryCmd(fileName string, settings []Setting) tea.Cmd {
+func ExecuteAnalyzeQueryCmd(fileName string, settings []Setting, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplainAnalyze()
 		var queryRunSettings = make([]Setting, 5, 5)
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
-		result, err := ExecuteExplain(queryWithExplain, settings)
+		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
 		if err != nil {
 			return errorMsg{error: err}
 		}
@@ -356,14 +358,14 @@ type executeExplainQueryMsg struct {
 	queryRun QueryRun
 }
 
-func ExecuteExplainQueryCmd(fileName string, settings []Setting) tea.Cmd {
+func ExecuteExplainQueryCmd(fileName string, settings []Setting, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplain()
 		var queryRunSettings = make([]Setting, 5, 5)
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
-		result, err := ExecuteExplain(queryWithExplain, settings)
+		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
 		if err != nil {
 			return errorMsg{error: err}
 		}
@@ -413,6 +415,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
+			if m.explainCancelFn != nil {
+				m.explainCancelFn()
+			}
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.IndentToggle):
 			m.ctx.Indent = !m.ctx.Indent
@@ -461,7 +466,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.originalSource.sourceType == SOURCE_FILE {
 				m.loading = true
 				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
-				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteQueryCmd(m.originalSource.fileName, m.nextRunSettings))
+				explainContext, cancelFunc := context.WithCancel(context.Background())
+				m.explainCancelFn = cancelFunc
+				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
 			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
 			return m, PreviousQueryRun(m.queryRun)
@@ -481,15 +488,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case showAllMsg:
 		m.nextRunSettings = msg.settings
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.source.fileName, m.nextRunSettings))
+		explainContext, cancelFunc := context.WithCancel(context.Background())
+		m.explainCancelFn = cancelFunc
+		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.source.fileName, m.nextRunSettings, explainContext))
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		m.loading = true
 		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
-		return m, tea.Batch(m.stopwatch.Init(), ExecuteQueryCmd(m.source.fileName, m.nextRunSettings))
+		explainContext, cancelFunc := context.WithCancel(context.Background())
+		m.explainCancelFn = cancelFunc
+		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.source.fileName, m.nextRunSettings, explainContext))
 	case executeQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		m.loading = false
+		m.explainCancelFn = nil
 		return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
 	case newQueryRunMsg:
 		newQueryRun := msg.queryRun

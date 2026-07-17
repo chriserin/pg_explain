@@ -27,10 +27,10 @@ func (c Connection) SetSetting(setting Setting) error {
 	return err
 }
 
-func (c Connection) ExecuteExplain(query string) (string, error) {
+func (c Connection) ExecuteExplain(query string, ctx context.Context) (string, error) {
 
 	var explainResult string
-	err := c.conn.QueryRow(context.Background(), query).Scan(&explainResult)
+	err := c.conn.QueryRow(ctx, query).Scan(&explainResult)
 	if err != nil {
 		return "", err
 	}
