@@ -23,6 +23,11 @@ var settingPositions []string = []string{
 	"join_collapse_limit",
 	"effective_cache_size",
 	"max_parallel_workers_per_gather",
+	"cluster_name",
+}
+
+var excludedFromNextSettings []string = []string{
+	"cluster_name",
 }
 
 func (setting *Setting) FindPosition() int {

@@ -42,7 +42,7 @@ func (c Connection) Close() {
 	c.conn.Close(context.Background())
 }
 
-var allowedSettings = []string{"work_mem", "join_collapse_limit", "max_parallel_workers_per_gather", "random_page_cost", "effective_cache_size"}
+var allowedSettings = []string{"work_mem", "join_collapse_limit", "max_parallel_workers_per_gather", "random_page_cost", "effective_cache_size", "cluster_name"}
 
 func (c Connection) ShowAll() ([]Setting, error) {
 	rows, err := c.conn.Query(context.Background(), "show all")

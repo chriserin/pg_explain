@@ -343,7 +343,7 @@ func ExecuteAnalyzeQueryCmd(fileName string, settings []Setting, ctx context.Con
 	return func() tea.Msg {
 		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplainAnalyze()
-		var queryRunSettings = make([]Setting, 5, 5)
+		var queryRunSettings = make([]Setting, len(settings), len(settings))
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
 		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
@@ -371,7 +371,7 @@ func ExecuteExplainQueryCmd(fileName string, settings []Setting, ctx context.Con
 	return func() tea.Msg {
 		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplain()
-		var queryRunSettings = make([]Setting, 5, 5)
+		var queryRunSettings = make([]Setting, len(settings), len(settings))
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
 		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
@@ -551,14 +551,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ctx.Height = msg.Height
 		m.setSqlViewHeight()
 		m.detailsViewport.SetDimensions(m.ctx.Width-1, 10)
-		m.thisSettingsViewport.SetDimensions((m.ctx.Width-1)/2, 7)
+		m.thisSettingsViewport.SetDimensions((m.ctx.Width-1)/2, len(allowedSettings)+2)
 		var nextSettingsWidth int
 		if m.ctx.Width%2 == 1 {
 			nextSettingsWidth = (m.ctx.Width-1)/2 - 1
 		} else {
 			nextSettingsWidth = (m.ctx.Width - 1) / 2
 		}
-		m.nextSettingsViewport.SetDimensions(nextSettingsWidth, 7)
+		m.nextSettingsViewport.SetDimensions(nextSettingsWidth, len(allowedSettings)+2)
 	}
 
 	return m, nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"text/template"
 
@@ -253,9 +254,11 @@ func ExecuteExplain(query string, settings []Setting, ctx context.Context) (stri
 	defer pgConn.Close()
 
 	for _, setting := range settings {
-		err := pgConn.SetSetting(setting)
-		if err != nil {
-			return "", err
+		if !slices.Contains(excludedFromNextSettings, "cluster_name") {
+			err := pgConn.SetSetting(setting)
+			if err != nil {
+				return "", err
+			}
 		}
 	}
 	return pgConn.ExecuteExplain(query, ctx)
