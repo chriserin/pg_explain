@@ -185,9 +185,10 @@ type Model struct {
 	error                error
 	errorViewport        Section
 	explainCancelFn      context.CancelFunc
+	runType              RunType
 }
 
-func InitModel(source Source) Model {
+func InitModel(source Source, runType RunType) Model {
 	ctx := InitProgramContext()
 	nextRunSettings := NewSection("Settings", 80, 7)
 	thisRunSettings := NewSection("Settings", 80, 7)
@@ -208,6 +209,7 @@ func InitModel(source Source) Model {
 		originalSource:       source,
 		spinner:              initialSpinner(),
 		errorViewport:        NewSection("!Error!", 80, 7),
+		runType:              runType,
 	}
 }
 
@@ -273,8 +275,15 @@ func (s Source) View(ctx ProgramContext) string {
 	}
 }
 
-func RunProgram(source Source, teaOpts ...tea.ProgramOption) *tea.Program {
-	model := InitModel(source)
+type RunType int
+
+const (
+	RunExplain RunType = iota
+	RunExplainAnalyze
+)
+
+func RunProgram(source Source, runType RunType, teaOpts ...tea.ProgramOption) *tea.Program {
+	model := InitModel(source, runType)
 
 	if source.sourceType == SOURCE_STDIN {
 		explainPlan := Convert(source.input)
@@ -468,6 +477,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 				explainContext, cancelFunc := context.WithCancel(context.Background())
 				m.explainCancelFn = cancelFunc
+				m.runType = RunExplainAnalyze
 				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
 			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
@@ -493,6 +503,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.source.fileName, m.nextRunSettings, explainContext))
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
+		if m.runType == RunExplain {
+			m.loading = false
+			m.explainCancelFn = nil
+			return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
+		}
 		m.loading = true
 		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 		explainContext, cancelFunc := context.WithCancel(context.Background())

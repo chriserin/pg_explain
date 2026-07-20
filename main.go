@@ -45,7 +45,29 @@ func main() {
 
 			source := Source{sourceType: SOURCE_FILE, fileName: args[0]}
 
-			if _, err := RunProgram(source).Run(); err != nil {
+			if _, err := RunProgram(source, RunExplainAnalyze).Run(); err != nil {
+				fmt.Println("Error running program:", err)
+				os.Exit(1)
+			} else {
+				return
+			}
+		},
+	}
+
+	var cmdExplain = &cobra.Command{
+		Use:   "exp",
+		Short: "Get plan by explaining sql",
+		Long:  "Get plan by explaining sql",
+		Args:  cobra.MinimumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := LoadSqlConfig(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+
+			source := Source{sourceType: SOURCE_FILE, fileName: args[0]}
+
+			if _, err := RunProgram(source, RunExplain).Run(); err != nil {
 				fmt.Println("Error running program:", err)
 				os.Exit(1)
 			} else {
@@ -70,7 +92,7 @@ func main() {
 				source = Source{sourceType: SOURCE_PGEX}
 			}
 
-			if _, err := RunProgram(source).Run(); err != nil {
+			if _, err := RunProgram(source, RunExplainAnalyze).Run(); err != nil {
 				fmt.Println("Error running program:", err)
 				os.Exit(1)
 			} else {
@@ -90,6 +112,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVarP(&cliOptions.database, "database", "", "", "database name")
 
 	rootCmd.AddCommand(cmdExec)
+	rootCmd.AddCommand(cmdExplain)
 
 	cmdVersion := &cobra.Command{
 		Use:   "version",
