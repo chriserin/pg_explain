@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acarl005/stripansi"
 	tea "charm.land/bubbletea/v2"
+	"github.com/acarl005/stripansi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,7 +31,7 @@ func TestStdinSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := Source{sourceType: SOURCE_STDIN, input: string(dat)}
-	p := RunProgram(source, tea.WithOutput(&buf))
+	p := RunProgram(source, RunExplainAnalyze, tea.WithOutput(&buf))
 
 	cmds := []tea.Cmd{
 		func() tea.Msg { return tea.WindowSizeMsg{Width: 80, Height: 24} },

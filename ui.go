@@ -351,14 +351,6 @@ func ExecuteAnalyzeQueryCmd(fileName string, settings []Setting, ctx context.Con
 			return errorMsg{error: err}
 		}
 		queryRun.SetResult(result)
-		pgexDir, err := CreatePgexDir()
-		if err != nil {
-			return errorMsg{error: err}
-		}
-		queryRun.WritePgexFile(pgexDir)
-		if err != nil {
-			return errorMsg{error: err}
-		}
 		return executeQueryMsg{queryRun: queryRun}
 	}
 }
@@ -504,6 +496,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		if m.runType == RunExplain {
+			SaveQueryRun(msg.queryRun)
 			m.loading = false
 			m.explainCancelFn = nil
 			return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
@@ -517,6 +510,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		UpdateModel(&m, msg.queryRun)
 		m.loading = false
 		m.explainCancelFn = nil
+		SaveQueryRun(msg.queryRun)
 		return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
 	case newQueryRunMsg:
 		newQueryRun := msg.queryRun
@@ -562,6 +556,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func SaveQueryRun(queryRun QueryRun) {
+	pgexDir, err := CreatePgexDir()
+	if err != nil {
+		fmt.Println("Error", err)
+	}
+	queryRun.WritePgexFile(pgexDir)
+	if err != nil {
+		fmt.Println("Error", err)
+	}
 }
 
 func UpdateModel(m *Model, queryRun QueryRun) {
