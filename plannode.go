@@ -34,6 +34,7 @@ type PlanNode struct {
 	Filter             string
 	JoinFilter         string
 	HashCond           string
+	RecheckCond        string
 	GroupKey           []string
 	SortKeys           []string
 	PresortKeys        []string
@@ -359,6 +360,11 @@ func (node PlanNode) Content(ctx ProgramContext) string {
 	if node.HashCond != "" {
 		buf.WriteString(ctx.DetailStyles.Label.Render("Hash Cond: "))
 		buf.WriteString(ctx.NormalStyle.Everything.Render(node.HashCond))
+		buf.WriteString("\n")
+	}
+	if node.RecheckCond != "" {
+		buf.WriteString(ctx.DetailStyles.Label.Render("Recheck Cond: "))
+		buf.WriteString(ctx.NormalStyle.Everything.Render(node.RecheckCond))
 		buf.WriteString("\n")
 	}
 	if node.GroupKey != nil {

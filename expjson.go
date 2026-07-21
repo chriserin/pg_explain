@@ -170,6 +170,10 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	if !ok {
 		hashcond = ""
 	}
+	recheckcond, ok := plan["Recheck Cond"].(string)
+	if !ok {
+		recheckcond = ""
+	}
 
 	var groupkeys []string
 	groupkeyI, ok := plan["Group Key"].([]interface{})
@@ -259,6 +263,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 		Filter:             filter,
 		JoinFilter:         joinFilter,
 		HashCond:           hashcond,
+		RecheckCond:        recheckcond,
 		GroupKey:           groupkeys,
 		SortKeys:           sortkeys,
 		PresortKeys:        presortedkeys,
