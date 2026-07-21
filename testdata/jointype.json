@@ -5,6 +5,7 @@
       "Parallel Aware": false,
       "Async Capable": false,
       "Join Type": "Semi",
+      "Join Filter": "x = 1 and y = 2",
       "Startup Cost": 0.29,
       "Total Cost": 1466.0,
       "Plan Rows": 1000,

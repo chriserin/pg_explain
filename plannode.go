@@ -32,6 +32,7 @@ type PlanNode struct {
 	IndexName          string
 	IndexCond          string
 	Filter             string
+	JoinFilter         string
 	HashCond           string
 	GroupKey           []string
 	SortKeys           []string
@@ -378,6 +379,11 @@ func (node PlanNode) Content(ctx ProgramContext) string {
 	if node.Filter != "" {
 		buf.WriteString(ctx.DetailStyles.Label.Render("Filter: "))
 		buf.WriteString(ctx.NormalStyle.Everything.Render(node.Filter))
+		buf.WriteString("\n")
+	}
+	if node.JoinFilter != "" {
+		buf.WriteString(ctx.DetailStyles.Label.Render("Join Filter: "))
+		buf.WriteString(ctx.NormalStyle.Everything.Render(node.JoinFilter))
 		buf.WriteString("\n")
 	}
 	if node.PlanWidth > 0 {

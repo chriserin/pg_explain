@@ -116,6 +116,11 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 		filter = ""
 	}
 
+	joinFilter, ok := plan["Join Filter"].(string)
+	if !ok {
+		joinFilter = ""
+	}
+
 	strategy, ok := plan["Strategy"].(string)
 	if !ok {
 		strategy = ""
@@ -252,6 +257,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 		IndexName:          indexName,
 		IndexCond:          indexCond,
 		Filter:             filter,
+		JoinFilter:         joinFilter,
 		HashCond:           hashcond,
 		GroupKey:           groupkeys,
 		SortKeys:           sortkeys,

@@ -34,13 +34,22 @@ func TestSubPlanNameProperty(t *testing.T) {
 	assert.Equal(t, plan.nodes[1].SubPlanName, "SubPlan 1")
 }
 
-func TestJoinTypeNameProperty(t *testing.T) {
+func TestJoinTypeProperty(t *testing.T) {
 	data, err := os.ReadFile("./testdata/jointype.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan := Convert(string(data))
 	assert.Equal(t, plan.nodes[0].JoinType, "Semi")
+}
+
+func TestJoinFilterProperty(t *testing.T) {
+	data, err := os.ReadFile("./testdata/jointype.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := Convert(string(data))
+	assert.Equal(t, plan.nodes[0].JoinFilter, "x = 1 and y = 2")
 }
 
 func TestOperationProperty(t *testing.T) {
