@@ -254,7 +254,7 @@ func ExecuteExplain(query string, settings []Setting, ctx context.Context) (stri
 	defer pgConn.Close()
 
 	for _, setting := range settings {
-		if !slices.Contains(excludedFromNextSettings, "cluster_name") {
+		if !slices.Contains(excludedFromNextSettings, setting.name) {
 			err := pgConn.SetSetting(setting)
 			if err != nil {
 				return "", err
