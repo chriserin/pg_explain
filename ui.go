@@ -37,7 +37,8 @@ type keyMap struct {
 	ToggleParallel     key.Binding
 	ToggleNumbers      key.Binding
 	ToggleRelations    key.Binding
-	ReExecute          key.Binding
+	ReExplain          key.Binding
+	ReAnalyze          key.Binding
 	PrevQueryRun       key.Binding
 	NextQueryRun       key.Binding
 	SqlUp              key.Binding
@@ -60,7 +61,7 @@ func (k keyMap) SqlShortHelp() []key.Binding {
 // key.Map interface.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.ToggleParallel, k.ToggleNumbers, k.ToggleDisplaySql, k.ToggleRelations, k.ReExecute}, // first column
+		{k.Up, k.Down, k.ToggleParallel, k.ToggleNumbers, k.ToggleDisplaySql, k.ToggleRelations, k.ReExplain, k.ReAnalyze}, // first column
 		{k.NextStatDisplay, k.PrevStatDisplay, k.SettingsUp, k.SettingsDown, k.SettingIncrement, k.SettingDecrement},
 		{k.PrevQueryRun, k.NextQueryRun, k.Help, k.Quit}, // second column
 	}
@@ -123,9 +124,13 @@ var keys = keyMap{
 		key.WithKeys("D"),
 		key.WithHelp("D", "Toggle Display SQL"),
 	),
-	ReExecute: key.NewBinding(
+	ReExplain: key.NewBinding(
 		key.WithKeys("X"),
-		key.WithHelp("X", "ReExecute Query"),
+		key.WithHelp("X", "ReExplain Query"),
+	),
+	ReAnalyze: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("A", "ReExecute Query"),
 	),
 	PrevQueryRun: key.NewBinding(
 		key.WithKeys("{"),
@@ -266,11 +271,12 @@ func (s Source) FileDate() string {
 }
 
 func (s Source) View(ctx ProgramContext) string {
-	if s.sourceType == SOURCE_FILE {
+	switch s.sourceType {
+	case SOURCE_FILE:
 		return ctx.StatusStyles.AltNormal.Render(fmt.Sprintf("FILE - %s", s.DisplayName()))
-	} else if s.sourceType == SOURCE_PGEX {
+	case SOURCE_PGEX:
 		return ctx.StatusStyles.AltNormal.UnsetBackground().Render(fmt.Sprintf("PGEX - %s - %s", s.FileDate(), s.DisplayName()))
-	} else {
+	default:
 		return "STDIN"
 	}
 }
@@ -463,7 +469,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ctx.DisplaySql = !m.ctx.DisplaySql
 		case key.Matches(msg, m.keys.ToggleRelations):
 			m.ctx.DisplayRelations = !m.ctx.DisplayRelations
-		case key.Matches(msg, m.keys.ReExecute):
+		case key.Matches(msg, m.keys.ReAnalyze):
 			if m.originalSource.sourceType == SOURCE_FILE {
 				m.loading = true
 				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
@@ -471,6 +477,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.explainCancelFn = cancelFunc
 				m.runType = RunExplainAnalyze
 				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
+			}
+		case key.Matches(msg, m.keys.ReAnalyze):
+			if m.originalSource.sourceType == SOURCE_FILE {
+				m.loading = true
+				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
+				explainContext, cancelFunc := context.WithCancel(context.Background())
+				m.explainCancelFn = cancelFunc
+				m.runType = RunExplain
+				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteExplainQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
 			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
 			return m, PreviousQueryRun(m.queryRun)
