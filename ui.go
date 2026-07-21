@@ -81,12 +81,12 @@ var keys = keyMap{
 		key.WithHelp("↓/j", "Move down"),
 	),
 	SettingsUp: key.NewBinding(
-		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k", "Settings up"),
+		key.WithKeys("K"),
+		key.WithHelp("K", "Settings up"),
 	),
 	SettingsDown: key.NewBinding(
-		key.WithKeys("ctrl+j"),
-		key.WithHelp("ctrl+j", "Settings down"),
+		key.WithKeys("J"),
+		key.WithHelp("J", "Settings down"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -97,8 +97,8 @@ var keys = keyMap{
 		key.WithHelp("q", "Quit"),
 	),
 	JoinView: key.NewBinding(
-		key.WithKeys("J"),
-		key.WithHelp("J", "Join"),
+		key.WithKeys("O"),
+		key.WithHelp("O", "Show Joins Only"),
 	),
 	NextStatDisplay: key.NewBinding(
 		key.WithKeys("]"),
@@ -500,7 +500,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.SettingDecrement):
 			m.nextRunSettings[m.ctx.SettingsCursor].DecrementSetting()
 		default:
-			return m, tea.Println(msg)
+			return m, nil
 		}
 	case showAllMsg:
 		m.nextRunSettings = msg.settings
