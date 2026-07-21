@@ -478,7 +478,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runType = RunExplainAnalyze
 				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
 			}
-		case key.Matches(msg, m.keys.ReAnalyze):
+		case key.Matches(msg, m.keys.ReExplain):
 			if m.originalSource.sourceType == SOURCE_FILE {
 				m.loading = true
 				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
