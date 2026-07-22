@@ -83,6 +83,11 @@ func main() {
 		Long:  `read explain in json format from stdin or read last pgex file with no inputs`,
 		Args:  cobra.MinimumNArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := LoadSqlConfig(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+
 			var source Source
 
 			stat, _ := os.Stdin.Stat()
