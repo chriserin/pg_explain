@@ -21,9 +21,9 @@ func NewStatusLine(explainPlan ExplainPlan) StatusLine {
 }
 
 func (s StatusLine) View(m Model) string {
-	styles := m.ctx.StatusStyles
+	styles := m.uiState.StatusStyles
 
-	if m.ctx.Width < 30 {
+	if m.uiState.Width < 30 {
 		return ""
 	}
 

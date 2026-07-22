@@ -118,8 +118,9 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 	plan := sqlAbove[1]
 
 	_, file := path.Split(pgexFile)
-
-	return QueryRun{query: sql, result: plan, pgexPointer: file, settings: settings}, nil
+	_, name, _ := strings.Cut(file, "_")
+	originalFilename := strings.Replace(name, ".pgex", "", 1) + ".sql"
+	return QueryRun{query: sql, result: plan, pgexPointer: file, settings: settings, originalFilename: originalFilename}, nil
 }
 
 func getQueryRunEntries() ([]string, error) {
@@ -150,8 +151,11 @@ func NewQueryRun(filename string) QueryRun {
 
 		sqls := sqlsplit.Split(string(body))
 
-		if len(sqls) != 1 {
+		if len(sqls) > 1 {
+			fmt.Println(sqls)
 			log.Fatal("too many sql statements in provided file")
+		} else if len(sqls) == 0 {
+			log.Fatal("no sql statements in provided file")
 		} else {
 			return QueryRun{
 				query:            sqls[0],
@@ -191,7 +195,7 @@ func (q QueryRun) pgexFilename() string {
 	filePath := strings.Replace(q.originalFilename, "~", user.HomeDir, 1)
 
 	_, file := path.Split(filePath)
-	name := strings.Split(file, ".")[0]
+	name, _, _ := strings.Cut(file, ".")
 
 	formattedNow := time.Now().Format(PGEX_DATE_FORMAT)
 	return fmt.Sprintf("%s_%s%s", formattedNow, name, extension)

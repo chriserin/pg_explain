@@ -98,7 +98,7 @@ func main() {
 				source = Source{sourceType: SOURCE_PGEX}
 			}
 
-			if _, err := RunProgram(source, RunExplainAnalyze).Run(); err != nil {
+			if _, err := RunProgram(source, RunNothing).Run(); err != nil {
 				fmt.Println("Error running program:", err)
 				os.Exit(1)
 			} else {

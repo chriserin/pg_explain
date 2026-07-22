@@ -30,7 +30,7 @@ func (s StatView) String() string {
 	return ""
 }
 
-type ProgramContext struct {
+type ProgramUIState struct {
 	Indent           bool
 	Cursor           int
 	SettingsCursor   int
@@ -80,10 +80,10 @@ type SettingsStyles struct {
 	SelectedSettingsType lipgloss.Style
 }
 
-func InitProgramContext() ProgramContext {
+func InitProgramUIState() ProgramUIState {
 	normal := NormalStyles()
 
-	return ProgramContext{
+	return ProgramUIState{
 		Cursor:           0,
 		Indent:           true,
 		JoinView:         false,
@@ -99,7 +99,7 @@ func InitProgramContext() ProgramContext {
 	}
 }
 
-func (ctx *ProgramContext) ResetContext(explainPlan ExplainPlan, model Model) {
+func (ctx *ProgramUIState) ResetUIState(explainPlan ExplainPlan, model Model) {
 	ctx.Cursor = 0
 	ctx.SettingsCursor = 0
 	ctx.SelectedNode = model.DisplayNodes[ctx.SettingsCursor]

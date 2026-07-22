@@ -171,7 +171,7 @@ type Model struct {
 	help                 help.Model
 	sqlHelp              help.Model
 	nodes                []PlanNode
-	ctx                  ProgramContext
+	uiState              ProgramUIState
 	DisplayNodes         []PlanNode
 	StatusLine           StatusLine
 	detailsViewport      Section
@@ -179,13 +179,10 @@ type Model struct {
 	thisSettingsViewport Section
 	nextSettingsViewport Section
 	source               Source
-	originalSource       Source
 	queryRun             QueryRun
 	spinner              spinner.Model
 	stopwatch            stopwatch.Model
-	sqlChannel           chan QueryRun
 	loading              bool
-	pgexPointer          string
 	nextRunSettings      []Setting
 	error                error
 	errorViewport        Section
@@ -194,7 +191,7 @@ type Model struct {
 }
 
 func InitModel(source Source, runType RunType) Model {
-	ctx := InitProgramContext()
+	ctx := InitProgramUIState()
 	nextRunSettings := NewSection("Settings", 80, 7)
 	thisRunSettings := NewSection("Settings", 80, 7)
 	nextRunSettings.subtitle = ctx.SettingsStyles.SelectedSettingsType.Render(" Next Run ")
@@ -202,7 +199,7 @@ func InitModel(source Source, runType RunType) Model {
 	sqlViewport := NewSection("SQL", 80, 10)
 
 	return Model{
-		ctx:                  ctx,
+		uiState:              ctx,
 		keys:                 keys,
 		help:                 help.New(),
 		sqlHelp:              help.New(),
@@ -211,7 +208,6 @@ func InitModel(source Source, runType RunType) Model {
 		nextSettingsViewport: nextRunSettings,
 		thisSettingsViewport: thisRunSettings,
 		source:               source,
-		originalSource:       source,
 		spinner:              initialSpinner(),
 		errorViewport:        NewSection("!Error!", 80, 7),
 		runType:              runType,
@@ -227,24 +223,23 @@ func initialSpinner() spinner.Model {
 
 func (m *Model) UpdateModel(explainPlan ExplainPlan) {
 	m.nodes = explainPlan.nodes
-	m.SetDisplayNodes(displayedNodes(explainPlan.nodes, m.ctx))
+	m.SetDisplayNodes(displayedNodes(explainPlan.nodes, m.uiState))
 	m.StatusLine = NewStatusLine(explainPlan)
 }
 
 func (m *Model) SetDisplayNodes(nodes []PlanNode) {
-	m.DisplayNodes = displayedNodes(nodes, m.ctx)
+	m.DisplayNodes = displayedNodes(nodes, m.uiState)
 	m.setSqlViewHeight()
 }
 
 func (m *Model) setSqlViewHeight() {
-	m.sqlViewport.SetDimensions(m.ctx.Width-1, m.ctx.Height-len(m.DisplayNodes)-13)
+	m.sqlViewport.SetDimensions(m.uiState.Width-1, m.uiState.Height-len(m.DisplayNodes)-13)
 }
 
 type SourceType int
 
 const (
-	SOURCE_ZERO SourceType = iota
-	SOURCE_STDIN
+	SOURCE_STDIN SourceType = iota
 	SOURCE_FILE
 	SOURCE_PGEX
 )
@@ -270,7 +265,7 @@ func (s Source) FileDate() string {
 	return pgex_datetime.Format(time.DateTime)
 }
 
-func (s Source) View(ctx ProgramContext) string {
+func (s Source) View(ctx ProgramUIState) string {
 	switch s.sourceType {
 	case SOURCE_FILE:
 		return ctx.StatusStyles.AltNormal.Render(fmt.Sprintf("FILE - %s", s.DisplayName()))
@@ -284,17 +279,21 @@ func (s Source) View(ctx ProgramContext) string {
 type RunType int
 
 const (
-	RunExplain RunType = iota
+	RunNothing RunType = iota
+	RunExplain
 	RunExplainAnalyze
 )
 
 func RunProgram(source Source, runType RunType, teaOpts ...tea.ProgramOption) *tea.Program {
 	model := InitModel(source, runType)
 
-	if source.sourceType == SOURCE_STDIN {
+	switch source.sourceType {
+	case SOURCE_STDIN:
 		explainPlan := Convert(source.input)
 		model.UpdateModel(explainPlan)
-		model.ctx.ResetContext(explainPlan, model)
+		model.uiState.ResetUIState(explainPlan, model)
+	case SOURCE_FILE:
+		model.queryRun = NewQueryRun(source.fileName)
 	}
 
 	program := tea.NewProgram(
@@ -328,13 +327,13 @@ func NextQueryRun(queryRun QueryRun) tea.Cmd {
 }
 
 func LatestQueryRun() tea.Cmd {
-	return func() tea.Msg {
+	return tea.Batch(func() tea.Msg {
 		newQueryRun, err := latestQueryRun()
 		if err != nil {
 			return errorMsg{error: err}
 		}
 		return newQueryRunMsg{queryRun: newQueryRun}
-	}
+	}, ShowAllCmd)
 }
 
 type executeQueryMsg struct {
@@ -345,11 +344,10 @@ type errorMsg struct {
 	error error
 }
 
-func ExecuteAnalyzeQueryCmd(fileName string, settings []Setting, ctx context.Context) tea.Cmd {
+func ExecuteAnalyzeQueryCmd(queryRun QueryRun, settings []Setting, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplainAnalyze()
-		var queryRunSettings = make([]Setting, len(settings), len(settings))
+		var queryRunSettings = make([]Setting, len(settings))
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
 		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
@@ -365,11 +363,10 @@ type executeExplainQueryMsg struct {
 	queryRun QueryRun
 }
 
-func ExecuteExplainQueryCmd(fileName string, settings []Setting, ctx context.Context) tea.Cmd {
+func ExecuteExplainQueryCmd(queryRun QueryRun, settings []Setting, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		queryRun := NewQueryRun(fileName)
 		queryWithExplain := queryRun.WithExplain()
-		var queryRunSettings = make([]Setting, len(settings), len(settings))
+		var queryRunSettings = make([]Setting, len(settings))
 		copy(queryRunSettings, settings)
 		queryRun.settings = queryRunSettings
 		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
@@ -407,17 +404,17 @@ func ShowAll() ([]Setting, error) {
 }
 
 func (m Model) Init() tea.Cmd {
-	if m.source.sourceType == SOURCE_STDIN {
+	switch m.source.sourceType {
+	case SOURCE_STDIN:
 		return nil
-	} else if m.source.sourceType == SOURCE_PGEX {
+	case SOURCE_PGEX:
 		return LatestQueryRun()
-	} else {
+	default:
 		return ShowAllCmd
 	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch {
@@ -427,66 +424,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.IndentToggle):
-			m.ctx.Indent = !m.ctx.Indent
+			m.uiState.Indent = !m.uiState.Indent
 		case key.Matches(msg, m.keys.Up):
-			if m.ctx.Cursor-1 >= 0 {
-				m.ctx.Cursor = m.ctx.Cursor - 1
-				m.ctx.SelectedNode = m.DisplayNodes[m.ctx.Cursor]
+			if m.uiState.Cursor-1 >= 0 {
+				m.uiState.Cursor = m.uiState.Cursor - 1
+				m.uiState.SelectedNode = m.DisplayNodes[m.uiState.Cursor]
 			}
 		case key.Matches(msg, m.keys.Down):
-			if m.ctx.Cursor+1 < len(m.DisplayNodes) {
-				m.ctx.Cursor = m.ctx.Cursor + 1
-				m.ctx.SelectedNode = m.DisplayNodes[m.ctx.Cursor]
+			if m.uiState.Cursor+1 < len(m.DisplayNodes) {
+				m.uiState.Cursor = m.uiState.Cursor + 1
+				m.uiState.SelectedNode = m.DisplayNodes[m.uiState.Cursor]
 			}
 		case key.Matches(msg, m.keys.SettingsUp):
-			if m.ctx.SettingsCursor-1 >= 0 {
-				m.ctx.SettingsCursor = m.ctx.SettingsCursor - 1
+			if m.uiState.SettingsCursor-1 >= 0 {
+				m.uiState.SettingsCursor = m.uiState.SettingsCursor - 1
 			}
 		case key.Matches(msg, m.keys.SettingsDown):
-			if m.ctx.SettingsCursor+1 < len(m.nextRunSettings) {
-				m.ctx.SettingsCursor = m.ctx.SettingsCursor + 1
+			if m.uiState.SettingsCursor+1 < len(m.nextRunSettings) {
+				m.uiState.SettingsCursor = m.uiState.SettingsCursor + 1
 			}
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.JoinView):
-			m.ctx.JoinView = !m.ctx.JoinView
-			m.SetDisplayNodes(displayedNodes(m.nodes, m.ctx))
-			m.ctx.Cursor = 0
+			m.uiState.JoinView = !m.uiState.JoinView
+			m.SetDisplayNodes(displayedNodes(m.nodes, m.uiState))
+			m.uiState.Cursor = 0
 			if len(m.DisplayNodes) > 0 {
-				m.ctx.SelectedNode = m.DisplayNodes[m.ctx.Cursor]
+				m.uiState.SelectedNode = m.DisplayNodes[m.uiState.Cursor]
 			} else {
-				m.ctx.SelectedNode = PlanNode{}
+				m.uiState.SelectedNode = PlanNode{}
 			}
 		case key.Matches(msg, m.keys.NextStatDisplay):
-			m.ctx.StatDisplay = nextStatDisplay(m.ctx)
+			m.uiState.StatDisplay = nextStatDisplay(m.uiState)
 		case key.Matches(msg, m.keys.PrevStatDisplay):
-			m.ctx.StatDisplay = prevStatDisplay(m.ctx)
+			m.uiState.StatDisplay = prevStatDisplay(m.uiState)
 		case key.Matches(msg, m.keys.ToggleParallel):
-			m.ctx.DisplayParallel = !m.ctx.DisplayParallel
+			m.uiState.DisplayParallel = !m.uiState.DisplayParallel
 		case key.Matches(msg, m.keys.ToggleNumbers):
-			m.ctx.DisplayNumbers = !m.ctx.DisplayNumbers
+			m.uiState.DisplayNumbers = !m.uiState.DisplayNumbers
 		case key.Matches(msg, m.keys.ToggleDisplaySql):
-			m.ctx.DisplaySql = !m.ctx.DisplaySql
+			m.uiState.DisplaySql = !m.uiState.DisplaySql
 		case key.Matches(msg, m.keys.ToggleRelations):
-			m.ctx.DisplayRelations = !m.ctx.DisplayRelations
+			m.uiState.DisplayRelations = !m.uiState.DisplayRelations
 		case key.Matches(msg, m.keys.ReAnalyze):
-			if m.originalSource.sourceType == SOURCE_FILE {
-				m.loading = true
-				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
-				explainContext, cancelFunc := context.WithCancel(context.Background())
-				m.explainCancelFn = cancelFunc
-				m.runType = RunExplainAnalyze
-				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
-			}
+			m.loading = true
+			m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
+			explainContext, cancelFunc := context.WithCancel(context.Background())
+			m.explainCancelFn = cancelFunc
+			m.runType = RunExplainAnalyze
+			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
 		case key.Matches(msg, m.keys.ReExplain):
-			if m.originalSource.sourceType == SOURCE_FILE {
-				m.loading = true
-				m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
-				explainContext, cancelFunc := context.WithCancel(context.Background())
-				m.explainCancelFn = cancelFunc
-				m.runType = RunExplain
-				return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteExplainQueryCmd(m.originalSource.fileName, m.nextRunSettings, explainContext))
-			}
+			m.loading = true
+			m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
+			explainContext, cancelFunc := context.WithCancel(context.Background())
+			m.explainCancelFn = cancelFunc
+			m.runType = RunExplain
+			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteExplainQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
 		case key.Matches(msg, m.keys.PrevQueryRun):
 			return m, PreviousQueryRun(m.queryRun)
 		case key.Matches(msg, m.keys.NextQueryRun):
@@ -496,18 +489,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.SqlDown):
 			m.sqlViewport.LineDown(1)
 		case key.Matches(msg, m.keys.SettingIncrement):
-			m.nextRunSettings[m.ctx.SettingsCursor].IncrementSetting()
+			m.nextRunSettings[m.uiState.SettingsCursor].IncrementSetting()
 		case key.Matches(msg, m.keys.SettingDecrement):
-			m.nextRunSettings[m.ctx.SettingsCursor].DecrementSetting()
+			m.nextRunSettings[m.uiState.SettingsCursor].DecrementSetting()
 		default:
 			return m, nil
 		}
 	case showAllMsg:
 		m.nextRunSettings = msg.settings
+		if m.runType == RunNothing {
+			return m, nil
+		}
 		m.loading = true
 		explainContext, cancelFunc := context.WithCancel(context.Background())
 		m.explainCancelFn = cancelFunc
-		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.source.fileName, m.nextRunSettings, explainContext))
+		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		if m.runType == RunExplain {
@@ -520,7 +516,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 		explainContext, cancelFunc := context.WithCancel(context.Background())
 		m.explainCancelFn = cancelFunc
-		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.source.fileName, m.nextRunSettings, explainContext))
+		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
 	case executeQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		m.loading = false
@@ -529,10 +525,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
 	case newQueryRunMsg:
 		newQueryRun := msg.queryRun
-		if newQueryRun.pgexPointer != m.queryRun.pgexPointer {
-			UpdateModel(&m, newQueryRun)
-			m.source = Source{sourceType: SOURCE_PGEX, fileName: newQueryRun.pgexPointer}
-		}
+		UpdateModel(&m, newQueryRun)
+		m.source = Source{sourceType: SOURCE_PGEX, fileName: newQueryRun.pgexPointer}
 		return m, nil
 	case errorMsg:
 		m.error = msg.error
@@ -556,16 +550,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case tea.WindowSizeMsg:
-		m.ctx.Width = msg.Width
-		m.ctx.Height = msg.Height
+		m.uiState.Width = msg.Width
+		m.uiState.Height = msg.Height
 		m.setSqlViewHeight()
-		m.detailsViewport.SetDimensions(m.ctx.Width-1, 10)
-		m.thisSettingsViewport.SetDimensions((m.ctx.Width-1)/2, len(allowedSettings)+2)
+		m.detailsViewport.SetDimensions(m.uiState.Width-1, 10)
+		m.thisSettingsViewport.SetDimensions((m.uiState.Width-1)/2, len(allowedSettings)+2)
 		var nextSettingsWidth int
-		if m.ctx.Width%2 == 1 {
-			nextSettingsWidth = (m.ctx.Width-1)/2 - 1
+		if m.uiState.Width%2 == 1 {
+			nextSettingsWidth = (m.uiState.Width-1)/2 - 1
 		} else {
-			nextSettingsWidth = (m.ctx.Width - 1) / 2
+			nextSettingsWidth = (m.uiState.Width - 1) / 2
 		}
 		m.nextSettingsViewport.SetDimensions(nextSettingsWidth, len(allowedSettings)+2)
 	}
@@ -578,7 +572,7 @@ func SaveQueryRun(queryRun QueryRun) {
 	if err != nil {
 		fmt.Println("Error", err)
 	}
-	queryRun.WritePgexFile(pgexDir)
+	err = queryRun.WritePgexFile(pgexDir)
 	if err != nil {
 		fmt.Println("Error", err)
 	}
@@ -588,16 +582,16 @@ func UpdateModel(m *Model, queryRun QueryRun) {
 	m.queryRun = queryRun
 	explainPlan := Convert(queryRun.result)
 	m.UpdateModel(explainPlan)
-	m.ctx.ResetContext(explainPlan, *m)
-	m.ctx.SelectedNode = m.DisplayNodes[0]
-	wrappedSql := ansi.Wordwrap(queryRun.query, m.ctx.Width-10, "") + "\n"
+	m.uiState.ResetUIState(explainPlan, *m)
+	m.uiState.SelectedNode = m.DisplayNodes[0]
+	wrappedSql := ansi.Wordwrap(queryRun.query, m.uiState.Width-10, "") + "\n"
 	m.sqlViewport.SetContent(wrappedSql)
 }
 
-func prevStatDisplay(ctx ProgramContext) StatView {
+func prevStatDisplay(ctx ProgramUIState) StatView {
 	newStatDisplay := ctx.StatDisplay
 
-	for true {
+	for {
 		if newStatDisplay == 0 {
 			newStatDisplay = DisplayCost
 		} else {
@@ -613,10 +607,10 @@ func prevStatDisplay(ctx ProgramContext) StatView {
 	return newStatDisplay
 }
 
-func nextStatDisplay(ctx ProgramContext) StatView {
+func nextStatDisplay(ctx ProgramUIState) StatView {
 	newStatDisplay := ctx.StatDisplay
 
-	for true {
+	for {
 		newStatDisplay = (newStatDisplay + 1) % 5
 
 		if ctx.Analyzed {
@@ -628,11 +622,11 @@ func nextStatDisplay(ctx ProgramContext) StatView {
 	return newStatDisplay
 }
 
-func displayedNodes(nodes []PlanNode, ctx ProgramContext) []PlanNode {
+func displayedNodes(nodes []PlanNode, uiState ProgramUIState) []PlanNode {
 	resultNodes := make([]PlanNode, 0, len(nodes))
 
 	for _, node := range nodes {
-		if node.Display(ctx) {
+		if node.Display(uiState) {
 			resultNodes = append(resultNodes, node)
 		}
 	}
@@ -657,38 +651,38 @@ func (m Model) renderView() string {
 		spinnerView = "  "
 	}
 	buf.WriteString(spinnerView)
-	sourceView := m.source.View(m.ctx)
+	sourceView := m.source.View(m.uiState)
 	buf.WriteString(sourceView)
 
-	spaceAvailable := m.ctx.Width - ansi.StringWidth(sourceView)
+	spaceAvailable := m.uiState.Width - ansi.StringWidth(sourceView)
 
-	buf.WriteString(fmt.Sprintf("%*s%*s", spaceAvailable-10, m.ctx.StatDisplay.String(), 10, ""))
+	fmt.Fprintf(&buf, "%*s%*s", spaceAvailable-10, m.uiState.StatDisplay.String(), 10, "")
 	buf.WriteString("\n")
 
 	statusLine := m.StatusLine.View(m)
 	buf.WriteString(statusLine)
-	buf.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#1E2030")).Render(HeadersView(m.ctx, m.ctx.Width-ansi.StringWidth(statusLine)-1)))
+	buf.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#1E2030")).Render(HeadersView(m.uiState, m.uiState.Width-ansi.StringWidth(statusLine)-1)))
 	buf.WriteString("\n")
 
 	for i, node := range m.DisplayNodes {
-		buf.WriteString(node.View(i, m.ctx))
+		buf.WriteString(node.View(i, m.uiState))
 	}
 
 	buf.WriteString("\n")
 	if m.error != nil {
 		buf.WriteString(m.errorViewport.View())
-	} else if m.ctx.DisplaySql {
+	} else if m.uiState.DisplaySql {
 		buf.WriteString(m.sqlViewport.View())
 		buf.WriteString("\n")
 		buf.WriteString(m.sqlHelp.ShortHelpView(keys.SqlShortHelp()))
 	} else {
-		m.detailsViewport.SetContent(m.ctx.SelectedNode.Content(m.ctx))
-		m.detailsViewport.subtitle = m.ctx.NormalStyle.NodeName.Render(m.ctx.SelectedNode.Name())
+		m.detailsViewport.SetContent(m.uiState.SelectedNode.Content(m.uiState))
+		m.detailsViewport.subtitle = m.uiState.NormalStyle.NodeName.Render(m.uiState.SelectedNode.Name())
 		buf.WriteString(m.detailsViewport.View())
 		buf.WriteString("\n")
-		if slices.Contains([]SourceType{SOURCE_PGEX, SOURCE_FILE}, m.source.sourceType) {
-			m.thisSettingsViewport.SetContent(SettingsView(m.queryRun.settings, m.ctx, false))
-			m.nextSettingsViewport.SetContent(SettingsView(m.nextRunSettings, m.ctx, true))
+		if m.source.sourceType != SOURCE_STDIN {
+			m.thisSettingsViewport.SetContent(SettingsView(m.queryRun.settings, m.uiState, false))
+			m.nextSettingsViewport.SetContent(SettingsView(m.nextRunSettings, m.uiState, true))
 			buf.WriteString(lipgloss.JoinHorizontal(1, m.thisSettingsViewport.View(), " ", m.nextSettingsViewport.View()))
 		}
 		buf.WriteString("\n")
@@ -699,23 +693,24 @@ func (m Model) renderView() string {
 	return buf.String()
 }
 
-func HeadersView(ctx ProgramContext, spaceAvailable int) string {
+func HeadersView(ctx ProgramUIState, spaceAvailable int) string {
 	var headers string
-	if ctx.StatDisplay == DisplayTime {
+	switch ctx.StatDisplay {
+	case DisplayTime:
 		headers = fmt.Sprintf("%10s%15s ", "Startup", "Total")
-	} else if ctx.StatDisplay == DisplayCost {
+	case DisplayCost:
 		headers = fmt.Sprintf("%10s%15s ", "Startup", "Total")
-	} else if ctx.StatDisplay == DisplayBuffers {
+	case DisplayBuffers:
 		headers = fmt.Sprintf("%10s%15s ", "Total", "Read")
-	} else if ctx.StatDisplay == DisplayRows {
+	case DisplayRows:
 		headers = fmt.Sprintf("%10s%15s ", "Planned", "Actual")
-	} else if ctx.StatDisplay == DisplayNothing {
+	case DisplayNothing:
 		headers = ""
 	}
 	return fmt.Sprintf("%*s", spaceAvailable, headers)
 }
 
-func SettingsView(settings []Setting, ctx ProgramContext, nextSettings bool) string {
+func SettingsView(settings []Setting, ctx ProgramUIState, nextSettings bool) string {
 	var buf strings.Builder
 
 	for i, setting := range settings {

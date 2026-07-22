@@ -66,7 +66,7 @@ type Analyzed struct {
 	TempWriteBlocks   int
 }
 
-func (node PlanNode) View(i int, ctx ProgramContext) string {
+func (node PlanNode) View(i int, ctx ProgramUIState) string {
 
 	var viewPosition Position
 	if ctx.JoinView {
@@ -149,8 +149,8 @@ func (node PlanNode) View(i int, ctx ProgramContext) string {
 	return buf.String()
 }
 
-func (node PlanNode) Display(ctx ProgramContext) bool {
-	if ctx.JoinView {
+func (node PlanNode) Display(uiState ProgramUIState) bool {
+	if uiState.JoinView {
 		return node.JoinViewPosition.Display
 	} else {
 		return node.Position.Display
@@ -264,7 +264,7 @@ func (node PlanNode) times(styles Styles, space int) string {
 	return buf.String()
 }
 
-func (node PlanNode) rows(styles Styles, space int, ctx ProgramContext) string {
+func (node PlanNode) rows(styles Styles, space int, ctx ProgramUIState) string {
 
 	separatedPlanRows := formatUnderscores(node.PlanRows)
 	separatedActualRows := formatUnderscores(node.Analyzed.ActualRows)
@@ -297,7 +297,7 @@ func getRowStatus(percentOfActual float32, styles Styles) string {
 	}
 }
 
-func (node PlanNode) Content(ctx ProgramContext) string {
+func (node PlanNode) Content(ctx ProgramUIState) string {
 	if node.NodeType == "" {
 		return "No Node Selected"
 	}
