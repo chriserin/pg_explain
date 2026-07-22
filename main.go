@@ -34,9 +34,9 @@ var ConnString string
 
 func main() {
 	var cmdExec = &cobra.Command{
-		Use:   "exec",
-		Short: "Get plan by executing sql",
-		Long:  "Get plan by executing sql",
+		Use:   "analyze",
+		Short: "Explain and Analyze the query in the sql file",
+		Long:  "Explain and Analyze the query in the sql file",
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := LoadSqlConfig(); err != nil {
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	var cmdExplain = &cobra.Command{
-		Use:   "exp",
+		Use:   "explain",
 		Short: "Get plan by explaining sql",
 		Long:  "Get plan by explaining sql",
 		Args:  cobra.MinimumNArgs(1),
@@ -79,8 +79,8 @@ func main() {
 
 	var rootCmd = &cobra.Command{
 		Use:   "pg_explain",
-		Short: "read explain in json format from stdin",
-		Long:  `read explain in json format from stdin or read last pgex file with no inputs`,
+		Short: "Read json from stdin, examine last pgex file, or explain a query",
+		Long:  `Explain a query from the given file, read explain in json format from stdin, or if no inputs read last pgex file`,
 		Args:  cobra.MinimumNArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := LoadSqlConfig(); err != nil {
@@ -94,6 +94,14 @@ func main() {
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
 				input, _ := io.ReadAll(os.Stdin)
 				source = Source{sourceType: SOURCE_STDIN, input: string(input)}
+			} else if len(args) == 1 {
+				source := Source{sourceType: SOURCE_FILE, fileName: args[0]}
+
+				if _, err := RunProgram(source, RunExplain).Run(); err != nil {
+					fmt.Println("Error running program:", err)
+					os.Exit(1)
+				}
+				return
 			} else {
 				source = Source{sourceType: SOURCE_PGEX}
 			}
