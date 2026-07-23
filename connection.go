@@ -38,8 +38,8 @@ func (c Connection) ExecuteExplain(query string, ctx context.Context) (string, e
 	return explainResult, nil
 }
 
-func (c Connection) Close() {
-	c.conn.Close(context.Background())
+func (c Connection) Close() error {
+	return c.conn.Close(context.Background())
 }
 
 var allowedSettings = []string{"work_mem", "join_collapse_limit", "max_parallel_workers_per_gather", "random_page_cost", "effective_cache_size", "cluster_name"}
@@ -54,7 +54,12 @@ func (c Connection) ShowAll() ([]Setting, error) {
 	result := make([]Setting, 0, len(allowedSettings))
 	for rows.Next() {
 		var name, setting, description string
-		rows.Scan(&name, &setting, &description)
+
+		err = rows.Scan(&name, &setting, &description)
+		if err != nil {
+			return nil, err
+		}
+
 		if slices.Contains(allowedSettings, name) {
 			result = append(result, Setting{name: name, setting: setting})
 		}

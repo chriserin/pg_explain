@@ -51,7 +51,7 @@ func Convert(explainJson string) ExplainPlan {
 	}
 }
 
-func decodeJson(data string) (map[string]interface{}, float64, bool) {
+func decodeJson(data string) (map[string]any, float64, bool) {
 	var decoded any
 
 	err := json.Unmarshal([]byte(data), &decoded)
@@ -61,19 +61,19 @@ func decodeJson(data string) (map[string]interface{}, float64, bool) {
 		os.Exit(1)
 	}
 
-	planJson, ok := decoded.([]interface{})
+	planJson, ok := decoded.([]any)
 	if !ok && len(planJson) != 1 {
 		fmt.Fprintf(os.Stderr, "Unexpected value in json, expected array: %v\n", decoded)
 		os.Exit(1)
 	}
 
-	planObject, ok := planJson[0].(map[string]interface{})
+	planObject, ok := planJson[0].(map[string]any)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Unexpected value in json, expected object: %v\n", planJson[0])
 		os.Exit(1)
 	}
 
-	plan, ok := planObject["Plan"].(map[string]interface{})
+	plan, ok := planObject["Plan"].(map[string]any)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Unexpected value in json, expected 'Plan' attribute: %v\n", planObject)
 		os.Exit(1)
@@ -84,7 +84,7 @@ func decodeJson(data string) (map[string]interface{}, float64, bool) {
 	return plan, executionTime, analyzed
 }
 
-func extractPlanNodes(plan map[string]interface{}, parentPosition Position, parentJoinPosition Position, parseContext ParseContext) PlanNode {
+func extractPlanNodes(plan map[string]any, parentPosition Position, parentJoinPosition Position, parseContext ParseContext) PlanNode {
 	nodeType := plan["Node Type"].(string)
 	planRows := plan["Plan Rows"].(float64)
 
@@ -176,7 +176,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	}
 
 	var groupkeys []string
-	groupkeyI, ok := plan["Group Key"].([]interface{})
+	groupkeyI, ok := plan["Group Key"].([]any)
 	if ok {
 		for _, gi := range groupkeyI {
 			groupkeys = append(groupkeys, gi.(string))
@@ -184,7 +184,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	}
 
 	var sortkeys []string
-	sortkeyI, ok := plan["Sort Key"].([]interface{})
+	sortkeyI, ok := plan["Sort Key"].([]any)
 	if ok {
 		for _, gi := range sortkeyI {
 			sortkeys = append(sortkeys, gi.(string))
@@ -192,7 +192,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	}
 
 	var presortedkeys []string
-	presortedkeyI, ok := plan["Presorted Key"].([]interface{})
+	presortedkeyI, ok := plan["Presorted Key"].([]any)
 	if ok {
 		for _, gi := range presortedkeyI {
 			presortedkeys = append(presortedkeys, gi.(string))
@@ -218,7 +218,7 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	isGather := strings.Contains(nodeType, "Gather")
 
 	var workersPlannedInt int
-	if isGather {
+	if isGather && ok {
 		workersPlannedInt = int(workersPlanned) + 1
 	} else {
 		workersPlannedInt = 0
@@ -331,10 +331,10 @@ func extractPlanNodes(plan map[string]interface{}, parentPosition Position, pare
 	}
 
 	if plans != nil {
-		for _, plan := range plans.([]interface{}) {
+		for _, plan := range plans.([]any) {
 			if plan != nil {
 				extractPlanNodes(
-					plan.(map[string]interface{}),
+					plan.(map[string]any),
 					newPosition,
 					joinViewPosition,
 					newParseContext,

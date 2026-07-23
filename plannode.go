@@ -98,7 +98,7 @@ func (node PlanNode) View(i int, ctx ProgramUIState) string {
 			if node.Analyzed.LaunchedWorkers > 0 {
 				buf.WriteString(styles.Workers.Render(fmt.Sprintf("%.2d ", node.Analyzed.LaunchedWorkers)))
 			} else {
-				buf.WriteString(styles.Workers.Render(" - "))
+				buf.WriteString(styles.Workers.Render(fmt.Sprintf("%.2d ", node.PlannedWorkers)))
 			}
 		} else {
 			buf.WriteString(styles.Everything.Render("   "))
@@ -132,15 +132,16 @@ func (node PlanNode) View(i int, ctx ProgramUIState) string {
 
 	needed := ctx.Width - ansi.StringWidth(result) - 2
 
-	if ctx.StatDisplay == DisplayRows {
+	switch ctx.StatDisplay {
+	case DisplayRows:
 		buf.WriteString(node.rows(styles, needed, ctx))
-	} else if ctx.StatDisplay == DisplayBuffers {
+	case DisplayBuffers:
 		buf.WriteString(node.buffers(styles, needed))
-	} else if ctx.StatDisplay == DisplayCost {
+	case DisplayCost:
 		buf.WriteString(node.costs(styles, needed))
-	} else if ctx.StatDisplay == DisplayTime {
+	case DisplayTime:
 		buf.WriteString(node.times(styles, needed))
-	} else if ctx.StatDisplay == DisplayNothing {
+	case DisplayNothing:
 		buf.WriteString(styles.Everything.Render(fmt.Sprintf("%*s", needed, "")))
 	}
 
@@ -155,20 +156,6 @@ func (node PlanNode) Display(uiState ProgramUIState) bool {
 	} else {
 		return node.Position.Display
 	}
-}
-
-func (node PlanNode) abbrevName() string {
-	switch node.NodeType {
-	case "Index Only Scan":
-		return "IOS"
-	case "Index Scan":
-		return "IS"
-	case "Seq Scan":
-		return "SS"
-	case "Bitmap Heap Scan":
-		return "BHS"
-	}
-	return ""
 }
 
 func (node PlanNode) Name() string {
@@ -188,8 +175,6 @@ func (node PlanNode) Name() string {
 	}
 	if node.NodeType == "ModifyTable" {
 		nodeName = node.Operation
-	} else {
-		nodeName = nodeName
 	}
 	return strings.ReplaceAll(strings.Trim(fmt.Sprintf("%s %s %s", node.PartialMode, nodeName, joinType), " "), "  ", " ")
 }
@@ -287,16 +272,6 @@ func (node PlanNode) rows(styles Styles, space int, ctx ProgramUIState) string {
 	return buf.String()
 }
 
-func getRowStatus(percentOfActual float32, styles Styles) string {
-	if percentOfActual < 10 {
-		return styles.Warning.Render(fmt.Sprintf(" %.1f%%", percentOfActual))
-	} else if percentOfActual < 50 {
-		return styles.Caution.Render(fmt.Sprintf(" %.1f%%", percentOfActual))
-	} else {
-		return styles.Everything.Render(fmt.Sprintf(" %.1f%%", percentOfActual))
-	}
-}
-
 func (node PlanNode) Content(ctx ProgramUIState) string {
 	if node.NodeType == "" {
 		return "No Node Selected"
@@ -325,9 +300,9 @@ func (node PlanNode) Content(ctx ProgramUIState) string {
 		buf.WriteString(ctx.NormalStyle.Everything.Render(loops))
 		if node.Analyzed.ActualLoops > 1 {
 			if node.ParentIsNestedLoop {
-				buf.WriteString(fmt.Sprintf(" Loops each returning an avg of %s rows", formatUnderscores(node.Analyzed.ActualRows)))
+				fmt.Fprintf(&buf, " Loops each returning an avg of %s rows", formatUnderscores(node.Analyzed.ActualRows))
 			} else {
-				buf.WriteString(fmt.Sprintf(" Parallel workers each processing an avg of %s rows", formatUnderscores(node.Analyzed.ActualRows)))
+				fmt.Fprintf(&buf, " Parallel workers each processing an avg of %s rows", formatUnderscores(node.Analyzed.ActualRows))
 			}
 		}
 		buf.WriteString("\n")

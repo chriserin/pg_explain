@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -113,7 +114,6 @@ func main() {
 				return
 			}
 
-			cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -138,7 +138,10 @@ func main() {
 
 	rootCmd.AddCommand(cmdVersion)
 
-	rootCmd.Execute()
+	err := rootCmd.Execute()
+	if err != nil {
+		log.Fatalln("Error: ", err)
+	}
 }
 
 func LoadSqlConfig() error {

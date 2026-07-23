@@ -10,9 +10,9 @@ import (
 var printer *message.Printer = message.NewPrinter(language.English)
 
 func formatUnderscores(value int) string {
-	return strings.Replace(printer.Sprintf("%d", value), ",", "_", -1)
+	return strings.ReplaceAll(printer.Sprintf("%d", value), ",", "_")
 }
 
 func formatUnderscoresFloat(value float64) string {
-	return strings.Replace(printer.Sprintf("%.2f", value), ",", "_", -1)
+	return strings.ReplaceAll(printer.Sprintf("%.2f", value), ",", "_")
 }

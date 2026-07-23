@@ -92,11 +92,11 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 
 	contents := string(body)
 	if !strings.Contains(contents, sqlDivider) {
-		return QueryRun{}, errors.New("Wrong pgex format: no settings-above divider")
+		return QueryRun{}, errors.New("wrong pgex format: no settings-above divider")
 	}
 
 	if !strings.Contains(contents, explainDivider) {
-		return QueryRun{}, errors.New("Wrong pgex format: no sql-above divider")
+		return QueryRun{}, errors.New("wrong pgex format: no sql-above divider")
 	}
 
 	settingsAbove := strings.Split(contents, sqlDivider)
