@@ -126,7 +126,7 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 func getQueryRunEntries() ([]string, error) {
 	dirEntries, err := os.ReadDir(defaultPgexDir)
 	if err != nil {
-		return []string{}, errors.New("_pgex dir does not exist, use the exec command to create a .pgex file in a _pgex dir")
+		return []string{}, errors.New("_pgex dir does not yet exist, the explain command will create a .pgex file in a _pgex dir")
 	}
 
 	pgexFiles := make([]string, 0, len(dirEntries))
