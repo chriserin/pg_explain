@@ -31,7 +31,11 @@ func (s StatusLine) View(m Model) string {
 
 	buf.WriteString(styles.AltNormal.Render("  "))
 	buf.WriteString(styles.Normal.Render(""))
-	buf.WriteString(styles.Normal.Render(" Time:"))
+	timeLabel := " Time:"
+	if !m.loading && m.queryRun.cancelled {
+		timeLabel = " Canc:"
+	}
+	buf.WriteString(styles.Normal.Render(timeLabel))
 	buf.WriteString(styles.Value.Render(" %.3fms "))
 	buf.WriteString(styles.AltNormal.Render(""))
 	buf.WriteString(styles.Normal.Render(""))
@@ -46,6 +50,8 @@ func (s StatusLine) View(m Model) string {
 	var executionTime float64
 	if m.loading {
 		executionTime = float64(int64(m.stopwatch.Elapsed() / time.Millisecond))
+	} else if m.queryRun.cancelled {
+		executionTime = float64(int64(m.queryRun.cancelledElapsed / time.Millisecond))
 	} else {
 		executionTime = s.ExecutionTime
 	}

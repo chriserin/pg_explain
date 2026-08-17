@@ -51,3 +51,37 @@ func TestStdinSource(t *testing.T) {
 	assert.Contains(t, stripansi.Strip(rendered[ROW_EX_NODE_1]), "Finalize Aggregate")
 	assert.Contains(t, stripansi.Strip(rendered[ROW_DETAILS_TITLE]), "Details  Finalize Aggregate")
 }
+
+func TestCancelQueryKeyCancelsRunningQuery(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	m := InitModel(Source{sourceType: SOURCE_STDIN}, RunNothing)
+
+	called := false
+	m.explainCancelFn = func() { called = true }
+	m.loading = true
+	m.queryRun = QueryRun{query: "select 1", result: "some result"}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Text: "C"})
+	updatedModel := updated.(Model)
+
+	assert.True(t, called, "expected the running query's cancel function to be called")
+	assert.NotNil(t, cmd, "expected the stopwatch to be stopped and reset")
+	assert.Nil(t, updatedModel.explainCancelFn, "explainCancelFn should be cleared after cancellation")
+	assert.False(t, updatedModel.loading, "loading should be cleared after cancellation")
+
+	entries, err := os.ReadDir("_pgex")
+	if assert.NoError(t, err) {
+		assert.Len(t, entries, 1, "expected the query run to be saved to the _pgex dir")
+	}
+}
+
+func TestCancelQueryKeyNoOpWhenNoRunningQuery(t *testing.T) {
+	m := InitModel(Source{sourceType: SOURCE_STDIN}, RunNothing)
+	assert.Nil(t, m.explainCancelFn)
+
+	assert.NotPanics(t, func() {
+		_, cmd := m.Update(tea.KeyPressMsg{Text: "C"})
+		assert.Nil(t, cmd)
+	})
+}

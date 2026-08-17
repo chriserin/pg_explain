@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -45,6 +46,7 @@ type keyMap struct {
 	SqlDown            key.Binding
 	SettingIncrement   key.Binding
 	SettingDecrement   key.Binding
+	CancelQuery        key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the mini help view. It's part
@@ -63,7 +65,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.ToggleParallel, k.ToggleNumbers, k.ToggleDisplaySql, k.ToggleRelations, k.ReExplain, k.ReAnalyze}, // first column
 		{k.NextStatDisplay, k.PrevStatDisplay, k.SettingsUp, k.SettingsDown, k.SettingIncrement, k.SettingDecrement},
-		{k.PrevQueryRun, k.NextQueryRun, k.Help, k.Quit}, // second column
+		{k.PrevQueryRun, k.NextQueryRun, k.CancelQuery, k.Help, k.Quit}, // second column
 	}
 }
 
@@ -163,6 +165,10 @@ var keys = keyMap{
 	SettingDecrement: key.NewBinding(
 		key.WithKeys("-"),
 		key.WithHelp("-", "Decrement Setting"),
+	),
+	CancelQuery: key.NewBinding(
+		key.WithKeys("C"),
+		key.WithHelp("C", "Cancel Query"),
 	),
 }
 
@@ -344,13 +350,10 @@ type errorMsg struct {
 	error error
 }
 
-func ExecuteAnalyzeQueryCmd(queryRun QueryRun, settings []Setting, ctx context.Context) tea.Cmd {
+func ExecuteAnalyzeQueryCmd(queryRun QueryRun, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		queryWithExplain := queryRun.WithExplainAnalyze()
-		var queryRunSettings = make([]Setting, len(settings))
-		copy(queryRunSettings, settings)
-		queryRun.settings = queryRunSettings
-		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
+		result, err := ExecuteExplain(queryWithExplain, queryRun.settings, ctx)
 		if err != nil {
 			return errorMsg{error: err}
 		}
@@ -363,13 +366,10 @@ type executeExplainQueryMsg struct {
 	queryRun QueryRun
 }
 
-func ExecuteExplainQueryCmd(queryRun QueryRun, settings []Setting, ctx context.Context) tea.Cmd {
+func ExecuteExplainQueryCmd(queryRun QueryRun, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		queryWithExplain := queryRun.WithExplain()
-		var queryRunSettings = make([]Setting, len(settings))
-		copy(queryRunSettings, settings)
-		queryRun.settings = queryRunSettings
-		result, err := ExecuteExplain(queryWithExplain, settings, ctx)
+		result, err := ExecuteExplain(queryWithExplain, queryRun.settings, ctx)
 		if err != nil {
 			return errorMsg{error: err}
 		}
@@ -472,14 +472,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			explainContext, cancelFunc := context.WithCancel(context.Background())
 			m.explainCancelFn = cancelFunc
 			m.runType = RunExplainAnalyze
-			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
+			newRun := NewReQueryRun(m.queryRun)
+			newRun.SetSettings(m.nextRunSettings)
+			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteAnalyzeQueryCmd(newRun, explainContext))
 		case key.Matches(msg, m.keys.ReExplain):
 			m.loading = true
 			m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 			explainContext, cancelFunc := context.WithCancel(context.Background())
 			m.explainCancelFn = cancelFunc
 			m.runType = RunExplain
-			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteExplainQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
+			newRun := NewReQueryRun(m.queryRun)
+			newRun.SetSettings(m.nextRunSettings)
+			return m, tea.Batch(m.stopwatch.Init(), m.spinner.Tick, ExecuteExplainQueryCmd(newRun, explainContext))
+		case key.Matches(msg, m.keys.CancelQuery):
+			if m.explainCancelFn != nil {
+				m.explainCancelFn()
+				m.explainCancelFn = nil
+				m.loading = false
+				m.queryRun.Cancel(m.stopwatch.Elapsed())
+				SaveQueryRun(m.queryRun)
+				return m, m.stopwatch.Stop()
+			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
 			return m, PreviousQueryRun(m.queryRun)
 		case key.Matches(msg, m.keys.NextQueryRun):
@@ -503,11 +516,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		explainContext, cancelFunc := context.WithCancel(context.Background())
 		m.explainCancelFn = cancelFunc
-		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
+		m.queryRun.SetSettings(m.nextRunSettings)
+		return m, tea.Batch(m.spinner.Tick, ExecuteExplainQueryCmd(m.queryRun, explainContext))
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		if m.runType == RunExplain {
-			SaveQueryRun(msg.queryRun)
+			m.setSavedQueryRun(SaveQueryRun(msg.queryRun))
 			m.loading = false
 			m.explainCancelFn = nil
 			return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
@@ -516,22 +530,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
 		explainContext, cancelFunc := context.WithCancel(context.Background())
 		m.explainCancelFn = cancelFunc
-		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.queryRun, m.nextRunSettings, explainContext))
+		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.queryRun, explainContext))
 	case executeQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		m.loading = false
 		m.explainCancelFn = nil
-		SaveQueryRun(msg.queryRun)
+		m.setSavedQueryRun(SaveQueryRun(msg.queryRun))
 		return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
 	case newQueryRunMsg:
 		newQueryRun := msg.queryRun
 		UpdateModel(&m, newQueryRun)
-		m.source = Source{sourceType: SOURCE_PGEX, fileName: newQueryRun.pgexPointer}
+		m.setSavedQueryRun(newQueryRun)
 		return m, nil
 	case errorMsg:
+		m.loading = false
+		if errors.Is(msg.error, context.Canceled) {
+			return m, m.stopwatch.Stop()
+		}
+		m.queryRun.ClearCancelled()
 		m.error = msg.error
 		m.errorViewport.SetContent(msg.error.Error())
-		m.loading = false
 		return m, m.stopwatch.Stop()
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -567,7 +585,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func SaveQueryRun(queryRun QueryRun) {
+func SaveQueryRun(queryRun QueryRun) QueryRun {
 	pgexDir, err := CreatePgexDir()
 	if err != nil {
 		fmt.Println("Error", err)
@@ -576,6 +594,15 @@ func SaveQueryRun(queryRun QueryRun) {
 	if err != nil {
 		fmt.Println("Error", err)
 	}
+	return queryRun
+}
+
+// setSavedQueryRun updates the model's queryRun and source to reflect a
+// queryRun that has been written to its pgex file, keeping the header row
+// in sync with the query run it describes.
+func (m *Model) setSavedQueryRun(queryRun QueryRun) {
+	m.queryRun = queryRun
+	m.source = Source{sourceType: SOURCE_PGEX, fileName: queryRun.pgexPointer}
 }
 
 func UpdateModel(m *Model, queryRun QueryRun) {

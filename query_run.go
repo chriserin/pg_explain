@@ -26,6 +26,8 @@ type QueryRun struct {
 	originalFilename string
 	pgexPointer      string
 	settings         []Setting
+	cancelled        bool
+	cancelledElapsed time.Duration
 }
 
 func CreatePgexDir() (string, error) {
@@ -117,10 +119,30 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 	sql := sqlAbove[0]
 	plan := sqlAbove[1]
 
+	var cancelled bool
+	var cancelledElapsed time.Duration
+	trimmedPlan := strings.TrimLeft(plan, "\n")
+	if rest, found := strings.CutPrefix(trimmedPlan, cancelledMarker+" "); found {
+		markerLine, remainder, _ := strings.Cut(rest, "\n")
+		if d, err := time.ParseDuration(strings.TrimSpace(markerLine)); err == nil {
+			cancelled = true
+			cancelledElapsed = d
+			plan = strings.TrimLeft(remainder, "\n")
+		}
+	}
+
 	_, file := path.Split(pgexFile)
 	_, name, _ := strings.Cut(file, "_")
 	originalFilename := strings.Replace(name, ".pgex", "", 1) + ".sql"
-	return QueryRun{query: sql, result: plan, pgexPointer: file, settings: settings, originalFilename: originalFilename}, nil
+	return QueryRun{
+		query:            sql,
+		result:           plan,
+		pgexPointer:      file,
+		settings:         settings,
+		originalFilename: originalFilename,
+		cancelled:        cancelled,
+		cancelledElapsed: cancelledElapsed,
+	}, nil
 }
 
 func getQueryRunEntries() ([]string, error) {
@@ -168,8 +190,34 @@ func NewQueryRun(filename string) QueryRun {
 	return QueryRun{}
 }
 
+// NewReQueryRun returns a fresh QueryRun for re-running the same query,
+// carrying over only the query text and its originating filename.
+func NewReQueryRun(previous QueryRun) QueryRun {
+	return QueryRun{
+		query:            previous.query,
+		originalFilename: previous.originalFilename,
+	}
+}
+
+func (q *QueryRun) SetSettings(settings []Setting) {
+	queryRunSettings := make([]Setting, len(settings))
+	copy(queryRunSettings, settings)
+	q.settings = queryRunSettings
+}
+
 func (q *QueryRun) SetResult(result string) {
 	q.result = result
+	q.ClearCancelled()
+}
+
+func (q *QueryRun) Cancel(elapsed time.Duration) {
+	q.cancelled = true
+	q.cancelledElapsed = elapsed
+}
+
+func (q *QueryRun) ClearCancelled() {
+	q.cancelled = false
+	q.cancelledElapsed = 0
 }
 
 func (q *QueryRun) WritePgexFile(pgexDir string) error {
@@ -203,6 +251,7 @@ func (q QueryRun) pgexFilename() string {
 
 var explainDivider = "---------------- SQL ABOVE / EXPLAIN JSON BELOW ----------------"
 var sqlDivider = "---------------- SETTINGS ABOVE / SQL BELOW ----------------"
+var cancelledMarker = "CANCELLED"
 
 func (q QueryRun) pgexFileContent() string {
 	var buf strings.Builder
@@ -217,6 +266,9 @@ func (q QueryRun) pgexFileContent() string {
 	buf.WriteString("\n\n")
 	buf.WriteString(explainDivider)
 	buf.WriteString("\n\n")
+	if q.cancelled {
+		buf.WriteString(fmt.Sprintf("%s %s\n\n", cancelledMarker, q.cancelledElapsed))
+	}
 	buf.WriteString(q.result)
 	buf.WriteString("\n\n")
 	return buf.String()
