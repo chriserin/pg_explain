@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -20,6 +21,90 @@ func (ep ExplainPlan) TotalBuffers() int {
 
 func (ep ExplainPlan) TotalRows() int {
 	return ep.nodes[0].Analyzed.ActualRows
+}
+
+// RelationNames returns the deduplicated, sorted set of non-empty
+// RelationName values across all nodes in the plan.
+func (ep ExplainPlan) RelationNames() []string {
+	return collectNonEmpty(ep.nodes, func(n PlanNode) string { return n.RelationName })
+}
+
+// IndexNames returns the deduplicated, sorted set of non-empty
+// IndexName values across all nodes in the plan.
+func (ep ExplainPlan) IndexNames() []string {
+	return collectNonEmpty(ep.nodes, func(n PlanNode) string { return n.IndexName })
+}
+
+func collectNonEmpty(nodes []PlanNode, extract func(PlanNode) string) []string {
+	seen := make(map[string]struct{})
+	for _, node := range nodes {
+		if v := extract(node); v != "" {
+			seen[v] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+var stringLiteralPattern = regexp.MustCompile(`'[^']*'`)
+var castSuffixPattern = regexp.MustCompile(`::[A-Za-z_][A-Za-z0-9_]*(\[\])?`)
+var identifierPattern = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
+
+var conditionKeywords = map[string]struct{}{
+	"AND": {}, "OR": {}, "NOT": {}, "IS": {}, "NULL": {}, "TRUE": {}, "FALSE": {},
+	"ANY": {}, "ALL": {}, "IN": {}, "LIKE": {}, "ILIKE": {}, "BETWEEN": {}, "EXISTS": {},
+	"CASE": {}, "WHEN": {}, "THEN": {}, "ELSE": {}, "END": {}, "ASC": {}, "DESC": {},
+	"NULLS": {}, "FIRST": {}, "LAST": {}, "ARRAY": {}, "DISTINCT": {},
+}
+
+// extractIdentifiers pulls candidate column-name tokens out of a Postgres
+// deparsed condition/key fragment. It is a heuristic (regex-based, not a
+// real SQL parser): it may over-include tokens (function names, table
+// qualifiers) that don't correspond to real columns, but those are dropped
+// later when matched against actual column names in the database.
+func extractIdentifiers(s string) []string {
+	s = stringLiteralPattern.ReplaceAllString(s, " ")
+	s = castSuffixPattern.ReplaceAllString(s, "")
+	var out []string
+	for _, m := range identifierPattern.FindAllString(s, -1) {
+		if _, isKeyword := conditionKeywords[strings.ToUpper(m)]; !isKeyword {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// RelevantColumns returns the deduplicated, sorted set of candidate column
+// names referenced across every node's Filter/IndexCond/JoinFilter/
+// HashCond/RecheckCond/TidCond/GroupKey/SortKeys/PresortKeys fields — the
+// fields that actually feed the planner's selectivity estimates.
+func (ep ExplainPlan) RelevantColumns() []string {
+	seen := make(map[string]struct{})
+	for _, node := range ep.nodes {
+		for _, s := range []string{node.Filter, node.IndexCond, node.JoinFilter,
+			node.HashCond, node.RecheckCond, node.TidCond} {
+			for _, id := range extractIdentifiers(s) {
+				seen[id] = struct{}{}
+			}
+		}
+		for _, keys := range [][]string{node.GroupKey, node.SortKeys, node.PresortKeys} {
+			for _, k := range keys {
+				for _, id := range extractIdentifiers(k) {
+					seen[id] = struct{}{}
+				}
+			}
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 type ParseContext struct {

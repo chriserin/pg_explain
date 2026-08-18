@@ -378,6 +378,21 @@ func ExecuteExplainQueryCmd(queryRun QueryRun, ctx context.Context) tea.Cmd {
 	}
 }
 
+type pgStatsFetchedMsg struct {
+	queryRun QueryRun
+}
+
+func FetchPgStatsCmd(queryRun QueryRun) tea.Cmd {
+	return func() tea.Msg {
+		plan := Convert(queryRun.result)
+		stats, err := FetchPgStats(plan.RelationNames(), plan.IndexNames(), plan.RelevantColumns())
+		if err == nil {
+			queryRun.SetPgStats(stats)
+		}
+		return pgStatsFetchedMsg{queryRun: queryRun}
+	}
+}
+
 type showAllMsg struct {
 	settings []Setting
 }
@@ -521,10 +536,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeExplainQueryMsg:
 		UpdateModel(&m, msg.queryRun)
 		if m.runType == RunExplain {
-			m.setSavedQueryRun(SaveQueryRun(msg.queryRun))
-			m.loading = false
-			m.explainCancelFn = nil
-			return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
+			return m, FetchPgStatsCmd(msg.queryRun)
 		}
 		m.loading = true
 		m.stopwatch = stopwatch.New(stopwatch.WithInterval(time.Millisecond * 100))
@@ -533,9 +545,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.stopwatch.Init(), ExecuteAnalyzeQueryCmd(m.queryRun, explainContext))
 	case executeQueryMsg:
 		UpdateModel(&m, msg.queryRun)
+		return m, FetchPgStatsCmd(msg.queryRun)
+	case pgStatsFetchedMsg:
+		m.setSavedQueryRun(SaveQueryRun(msg.queryRun))
 		m.loading = false
 		m.explainCancelFn = nil
-		m.setSavedQueryRun(SaveQueryRun(msg.queryRun))
 		return m, tea.Batch(m.stopwatch.Stop(), m.stopwatch.Reset())
 	case newQueryRunMsg:
 		newQueryRun := msg.queryRun

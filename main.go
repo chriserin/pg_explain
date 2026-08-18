@@ -279,3 +279,18 @@ func ExecuteExplain(query string, settings []Setting, ctx context.Context) (stri
 	}
 	return pgConn.ExecuteExplain(query, ctx)
 }
+
+func FetchPgStats(tableNames, indexNames, columnNames []string) (PgStatsSnapshot, error) {
+	pgConn := Connection{
+		connConfig: ConnConfig,
+	}
+
+	err := pgConn.Connect()
+	if err != nil {
+		return PgStatsSnapshot{}, err
+	}
+
+	defer pgConn.Close()
+
+	return pgConn.FetchPgStats(tableNames, indexNames, columnNames)
+}

@@ -126,3 +126,41 @@ func TestParallelAwareProperty(t *testing.T) {
 	plan := Convert(string(data))
 	assert.Equal(t, true, plan.nodes[3].ParallelAware)
 }
+
+func TestRelationNamesDedup(t *testing.T) {
+	plan := ExplainPlan{nodes: []PlanNode{
+		{RelationName: "orders"},
+		{RelationName: "customers"},
+		{RelationName: "orders"},
+		{RelationName: ""},
+	}}
+	assert.Equal(t, []string{"customers", "orders"}, plan.RelationNames())
+}
+
+func TestIndexNamesDedup(t *testing.T) {
+	plan := ExplainPlan{nodes: []PlanNode{
+		{IndexName: "orders_pkey"},
+		{IndexName: ""},
+		{IndexName: "customers_pkey"},
+		{IndexName: "orders_pkey"},
+	}}
+	assert.Equal(t, []string{"customers_pkey", "orders_pkey"}, plan.IndexNames())
+}
+
+func TestExtractIdentifiers(t *testing.T) {
+	assert.Equal(t, []string{"orders", "status"}, extractIdentifiers("(orders.status = 'active'::text)"))
+	assert.Equal(t, []string{"lower", "name"}, extractIdentifiers("(lower(name) = 'x'::text)"))
+	assert.Empty(t, extractIdentifiers(""))
+}
+
+func TestRelevantColumns(t *testing.T) {
+	plan := ExplainPlan{nodes: []PlanNode{
+		{Filter: "(orders.status = 'active'::text)"},
+		{JoinFilter: "(orders.customer_id = customers.id)"},
+		{GroupKey: []string{"orders.status"}},
+		{SortKeys: []string{"customers.name"}},
+	}}
+	assert.Equal(t,
+		[]string{"customer_id", "customers", "id", "name", "orders", "status"},
+		plan.RelevantColumns())
+}

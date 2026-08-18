@@ -26,6 +26,7 @@ type QueryRun struct {
 	originalFilename string
 	pgexPointer      string
 	settings         []Setting
+	pgStats          PgStatsSnapshot
 	cancelled        bool
 	cancelledElapsed time.Duration
 }
@@ -131,12 +132,20 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 		}
 	}
 
+	result := plan
+	if resultPart, _, found := strings.Cut(plan, statsDivider); found {
+		// The PG_STATS section is a human-readable report, not re-parsed
+		// back into structured data — nothing in the app consumes it after
+		// load, so it's dropped here, only the explain result is kept.
+		result = resultPart
+	}
+
 	_, file := path.Split(pgexFile)
 	_, name, _ := strings.Cut(file, "_")
 	originalFilename := strings.Replace(name, ".pgex", "", 1) + ".sql"
 	return QueryRun{
 		query:            sql,
-		result:           plan,
+		result:           result,
 		pgexPointer:      file,
 		settings:         settings,
 		originalFilename: originalFilename,
@@ -210,6 +219,10 @@ func (q *QueryRun) SetResult(result string) {
 	q.ClearCancelled()
 }
 
+func (q *QueryRun) SetPgStats(pgStats PgStatsSnapshot) {
+	q.pgStats = pgStats
+}
+
 func (q *QueryRun) Cancel(elapsed time.Duration) {
 	q.cancelled = true
 	q.cancelledElapsed = elapsed
@@ -252,6 +265,7 @@ func (q QueryRun) pgexFilename() string {
 var explainDivider = "---------------- SQL ABOVE / EXPLAIN JSON BELOW ----------------"
 var sqlDivider = "---------------- SETTINGS ABOVE / SQL BELOW ----------------"
 var cancelledMarker = "CANCELLED"
+var statsDivider = "---------------- EXPLAIN JSON ABOVE / PG_STATS BELOW ----------------"
 
 func (q QueryRun) pgexFileContent() string {
 	var buf strings.Builder
@@ -271,6 +285,12 @@ func (q QueryRun) pgexFileContent() string {
 	}
 	buf.WriteString(q.result)
 	buf.WriteString("\n\n")
+	if !q.pgStats.IsEmpty() {
+		buf.WriteString(statsDivider)
+		buf.WriteString("\n\n")
+		buf.WriteString(q.pgStats.String())
+		buf.WriteString("\n")
+	}
 	return buf.String()
 }
 
