@@ -1,3 +1,4 @@
 _pgex/
 dist/
 /pgex
+/pg_explain
