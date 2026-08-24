@@ -29,6 +29,7 @@ type QueryRun struct {
 	pgStats          PgStatsSnapshot
 	cancelled        bool
 	cancelledElapsed time.Duration
+	ranAt            time.Time
 }
 
 func CreatePgexDir() (string, error) {
@@ -102,6 +103,15 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 		return QueryRun{}, errors.New("wrong pgex format: no sql-above divider")
 	}
 
+	var ranAt time.Time
+	if rest, found := strings.CutPrefix(contents, ranAtMarker+" "); found {
+		markerLine, remainder, _ := strings.Cut(rest, "\n")
+		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(markerLine)); err == nil {
+			ranAt = t
+			contents = strings.TrimLeft(remainder, "\n")
+		}
+	}
+
 	settingsAbove := strings.Split(contents, sqlDivider)
 
 	settingsContent := settingsAbove[0]
@@ -151,6 +161,7 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 		originalFilename: originalFilename,
 		cancelled:        cancelled,
 		cancelledElapsed: cancelledElapsed,
+		ranAt:            ranAt,
 	}, nil
 }
 
@@ -234,6 +245,9 @@ func (q *QueryRun) ClearCancelled() {
 }
 
 func (q *QueryRun) WritePgexFile(pgexDir string) error {
+	if q.ranAt.IsZero() {
+		q.ranAt = time.Now()
+	}
 	fileName := q.pgexFilename()
 	fullFilePath := filepath.Join(pgexDir, fileName)
 	contentBytes := []byte(q.pgexFileContent())
@@ -258,7 +272,7 @@ func (q QueryRun) pgexFilename() string {
 	_, file := path.Split(filePath)
 	name, _, _ := strings.Cut(file, ".")
 
-	formattedNow := time.Now().Format(PGEX_DATE_FORMAT)
+	formattedNow := q.ranAt.Format(PGEX_DATE_FORMAT)
 	return fmt.Sprintf("%s_%s%s", formattedNow, name, extension)
 }
 
@@ -266,9 +280,13 @@ var explainDivider = "---------------- SQL ABOVE / EXPLAIN JSON BELOW ----------
 var sqlDivider = "---------------- SETTINGS ABOVE / SQL BELOW ----------------"
 var cancelledMarker = "CANCELLED"
 var statsDivider = "---------------- EXPLAIN JSON ABOVE / PG_STATS BELOW ----------------"
+var ranAtMarker = "RAN_AT"
 
 func (q QueryRun) pgexFileContent() string {
 	var buf strings.Builder
+	if !q.ranAt.IsZero() {
+		buf.WriteString(fmt.Sprintf("%s %s\n\n", ranAtMarker, q.ranAt.Format(time.RFC3339)))
+	}
 	for _, setting := range q.settings {
 		buf.WriteString(setting.Marshal())
 		buf.WriteString("\n")

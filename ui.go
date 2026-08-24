@@ -261,22 +261,19 @@ func (s Source) DisplayName() string {
 	return file
 }
 
-func (s Source) FileDate() string {
-	_, file := path.Split(s.fileName)
-	parts := strings.Split(file, "_")
-	pgex_datetime, err := time.Parse(PGEX_DATE_FORMAT, parts[0])
-	if err != nil {
+func FileDate(t time.Time) string {
+	if t.IsZero() {
 		return ""
 	}
-	return pgex_datetime.Format(time.DateTime)
+	return t.Format(time.DateTime)
 }
 
-func (s Source) View(ctx ProgramUIState) string {
+func (s Source) View(ctx ProgramUIState, ranAt time.Time) string {
 	switch s.sourceType {
 	case SOURCE_FILE:
 		return ctx.StatusStyles.AltNormal.Render(fmt.Sprintf("FILE - %s", s.DisplayName()))
 	case SOURCE_PGEX:
-		return ctx.StatusStyles.AltNormal.UnsetBackground().Render(fmt.Sprintf("PGEX - %s - %s", s.FileDate(), s.DisplayName()))
+		return ctx.StatusStyles.AltNormal.UnsetBackground().Render(fmt.Sprintf("PGEX - %s - %s", FileDate(ranAt), s.DisplayName()))
 	default:
 		return "STDIN"
 	}
@@ -692,7 +689,7 @@ func (m Model) renderView() string {
 		spinnerView = "  "
 	}
 	buf.WriteString(spinnerView)
-	sourceView := m.source.View(m.uiState)
+	sourceView := m.source.View(m.uiState, m.queryRun.ranAt)
 	buf.WriteString(sourceView)
 
 	spaceAvailable := m.uiState.Width - ansi.StringWidth(sourceView)
