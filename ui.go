@@ -64,7 +64,7 @@ func (k keyMap) SqlShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.ToggleParallel, k.ToggleNumbers, k.ToggleDisplaySql, k.ToggleRelations, k.ReExplain, k.ReAnalyze}, // first column
-		{k.NextStatDisplay, k.PrevStatDisplay, k.SettingsUp, k.SettingsDown, k.SettingIncrement, k.SettingDecrement},
+		{k.JoinView, k.NextStatDisplay, k.PrevStatDisplay, k.SettingsUp, k.SettingsDown, k.SettingIncrement, k.SettingDecrement},
 		{k.PrevQueryRun, k.NextQueryRun, k.CancelQuery, k.Help, k.Quit}, // second column
 	}
 }
