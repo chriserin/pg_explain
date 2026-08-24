@@ -27,6 +27,7 @@ var cliOptions struct {
 	password    string
 	database    string
 	configPaths []string
+	pgexFiles   []string
 }
 
 var ConnConfig pgx.ConnConfig
@@ -91,6 +92,16 @@ func main() {
 
 			var source Source
 
+			if len(cliOptions.pgexFiles) > 0 {
+				source = Source{sourceType: SOURCE_PGEX, pgexFiles: cliOptions.pgexFiles}
+
+				if _, err := RunProgram(source, RunNothing).Run(); err != nil {
+					fmt.Println("Error running program:", err)
+					os.Exit(1)
+				}
+				return
+			}
+
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
 				input, _ := io.ReadAll(os.Stdin)
@@ -124,6 +135,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVarP(&cliOptions.user, "user", "", "", "database user")
 	rootCmd.PersistentFlags().StringVarP(&cliOptions.password, "password", "", "", "database password")
 	rootCmd.PersistentFlags().StringVarP(&cliOptions.database, "database", "", "", "database name")
+	rootCmd.Flags().StringArrayVarP(&cliOptions.pgexFiles, "pgex", "", nil, "replay a specific .pgex file(s)")
 
 	rootCmd.AddCommand(cmdExec)
 	rootCmd.AddCommand(cmdExplain)

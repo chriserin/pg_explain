@@ -194,6 +194,8 @@ type Model struct {
 	errorViewport        Section
 	explainCancelFn      context.CancelFunc
 	runType              RunType
+	pgexReplayFiles      []QueryRun
+	pgexReplayIndex      int
 }
 
 func InitModel(source Source, runType RunType) Model {
@@ -217,7 +219,22 @@ func InitModel(source Source, runType RunType) Model {
 		spinner:              initialSpinner(),
 		errorViewport:        NewSection("!Error!", 80, 7),
 		runType:              runType,
+		pgexReplayFiles:      CreateQueryRunsFromCmdLine(source.pgexFiles),
+		pgexReplayIndex:      0,
 	}
+}
+
+func CreateQueryRunsFromCmdLine(queryRunFilePaths []string) []QueryRun {
+	queryRuns := make([]QueryRun, 0, len(queryRunFilePaths))
+	for _, path := range queryRunFilePaths {
+		queryRun, err := loadQueryRun(path)
+		if err != nil {
+			panic(err)
+		}
+		queryRun.isFromCmdLine = true
+		queryRuns = append(queryRuns, queryRun)
+	}
+	return queryRuns
 }
 
 func initialSpinner() spinner.Model {
@@ -254,6 +271,7 @@ type Source struct {
 	sourceType SourceType
 	fileName   string
 	input      string
+	pgexFiles  []string
 }
 
 func (s Source) DisplayName() string {
@@ -307,26 +325,9 @@ func RunProgram(source Source, runType RunType, teaOpts ...tea.ProgramOption) *t
 	return program
 }
 
-type newQueryRunMsg struct{ queryRun QueryRun }
-
-func PreviousQueryRun(queryRun QueryRun) tea.Cmd {
-	return func() tea.Msg {
-		newQueryRun, err := queryRun.previousQueryRun()
-		if err != nil {
-			return errorMsg{error: err}
-		}
-		return newQueryRunMsg{queryRun: newQueryRun}
-	}
-}
-
-func NextQueryRun(queryRun QueryRun) tea.Cmd {
-	return func() tea.Msg {
-		newQueryRun, err := queryRun.nextQueryRun()
-		if err != nil {
-			return errorMsg{error: err}
-		}
-		return newQueryRunMsg{queryRun: newQueryRun}
-	}
+type newQueryRunMsg struct {
+	queryRun        QueryRun
+	pgexReplayIndex int
 }
 
 func LatestQueryRun() tea.Cmd {
@@ -335,7 +336,24 @@ func LatestQueryRun() tea.Cmd {
 		if err != nil {
 			return errorMsg{error: err}
 		}
-		return newQueryRunMsg{queryRun: newQueryRun}
+		return newQueryRunMsg{queryRun: newQueryRun, pgexReplayIndex: 0}
+	}, ShowAllCmd)
+}
+
+func ReplayQueryRun(replayFiles []QueryRun) tea.Cmd {
+	return tea.Batch(func() tea.Msg {
+		index := len(replayFiles) - 1
+		return newQueryRunMsg{queryRun: replayFiles[index], pgexReplayIndex: index}
+	}, ShowAllCmd)
+}
+
+func SpecificQueryRun(pgexFile string) tea.Cmd {
+	return tea.Batch(func() tea.Msg {
+		newQueryRun, err := loadQueryRun(pgexFile)
+		if err != nil {
+			return errorMsg{error: err}
+		}
+		return newQueryRunMsg{queryRun: newQueryRun, pgexReplayIndex: 0}
 	}, ShowAllCmd)
 }
 
@@ -420,6 +438,12 @@ func (m Model) Init() tea.Cmd {
 	case SOURCE_STDIN:
 		return nil
 	case SOURCE_PGEX:
+		if m.source.fileName != "" {
+			return SpecificQueryRun(m.source.fileName)
+		}
+		if len(m.pgexReplayFiles) > 0 {
+			return ReplayQueryRun(m.pgexReplayFiles)
+		}
 		return LatestQueryRun()
 	default:
 		return ShowAllCmd
@@ -506,9 +530,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.stopwatch.Stop()
 			}
 		case key.Matches(msg, m.keys.PrevQueryRun):
-			return m, PreviousQueryRun(m.queryRun)
+			if m.queryRun.isFromCmdLine && m.pgexReplayIndex == 0 {
+				return m, func() tea.Msg {
+					newQueryRun, latestErr := latestQueryRun()
+					if latestErr != nil {
+						return errorMsg{error: latestErr}
+					}
+					return newQueryRunMsg{queryRun: newQueryRun, pgexReplayIndex: 0}
+				}
+			} else if m.pgexReplayIndex == 0 {
+				foundQueryRun, found, err := m.queryRun.previousQueryRun()
+
+				return m, func() tea.Msg {
+					if err != nil {
+						return errorMsg{error: err}
+					} else if found {
+						return newQueryRunMsg{queryRun: foundQueryRun, pgexReplayIndex: 0}
+					} else {
+						return newQueryRunMsg{queryRun: m.queryRun, pgexReplayIndex: 0}
+					}
+				}
+			} else {
+				newQueryRunIndex := m.pgexReplayIndex - 1
+				return m, func() tea.Msg {
+					return newQueryRunMsg{queryRun: m.pgexReplayFiles[newQueryRunIndex], pgexReplayIndex: newQueryRunIndex}
+				}
+			}
 		case key.Matches(msg, m.keys.NextQueryRun):
-			return m, NextQueryRun(m.queryRun)
+			if m.queryRun.isFromCmdLine && m.pgexReplayIndex == len(m.pgexReplayFiles)-1 {
+				return m, func() tea.Msg {
+					return newQueryRunMsg{queryRun: m.queryRun, pgexReplayIndex: m.pgexReplayIndex}
+				}
+			} else if m.queryRun.isFromCmdLine {
+				return m, func() tea.Msg {
+					newQueryRunIndex := m.pgexReplayIndex + 1
+					return newQueryRunMsg{queryRun: m.pgexReplayFiles[newQueryRunIndex], pgexReplayIndex: newQueryRunIndex}
+				}
+			} else {
+				nextQueryRun, found, err := m.queryRun.nextQueryRun()
+
+				return m, func() tea.Msg {
+					if err != nil {
+						return errorMsg{error: err}
+					} else if found {
+						return newQueryRunMsg{queryRun: nextQueryRun, pgexReplayIndex: 0}
+					} else if len(m.pgexReplayFiles) > 0 {
+						return newQueryRunMsg{queryRun: m.pgexReplayFiles[0], pgexReplayIndex: 0}
+					} else {
+						return newQueryRunMsg{queryRun: m.queryRun, pgexReplayIndex: m.pgexReplayIndex}
+					}
+				}
+			}
 		case key.Matches(msg, m.keys.SqlUp):
 			m.sqlViewport.LineUp(1)
 		case key.Matches(msg, m.keys.SqlDown):
@@ -552,6 +624,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newQueryRun := msg.queryRun
 		UpdateModel(&m, newQueryRun)
 		m.setSavedQueryRun(newQueryRun)
+		m.pgexReplayIndex = msg.pgexReplayIndex
 		return m, nil
 	case errorMsg:
 		m.loading = false

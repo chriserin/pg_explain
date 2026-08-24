@@ -25,10 +25,12 @@ type QueryRun struct {
 	result           string
 	originalFilename string
 	pgexPointer      string
+	sourcePath       string
 	settings         []Setting
 	pgStats          PgStatsSnapshot
 	cancelled        bool
 	cancelledElapsed time.Duration
+	isFromCmdLine    bool
 	ranAt            time.Time
 }
 
@@ -39,43 +41,70 @@ func CreatePgexDir() (string, error) {
 	return dirPath, err
 }
 
-func (q QueryRun) previousQueryRun() (QueryRun, error) {
-	pgexFiles, err := getQueryRunEntries()
-	if err != nil {
-		return QueryRun{}, err
-	}
+var ErrNoPreviousQueryRun = errors.New("no previous query run")
 
-	var currentIndex int
+// currentQueryRunIndex locates q within the real chronological _pgex
+// history by exact absolute path (sourcePath), not by filename. A
+// substring/basename match would misidentify a query run loaded from
+// outside the _pgex dir (e.g. via --pgex pointing at a copy or a
+// non-timestamped bookmark file) as whichever real history entry happens
+// to share that name, making it impossible to navigate back to the actual
+// file that was loaded. found is false when q isn't part of the real
+// history at all.
+func currentQueryRunIndex(q QueryRun, pgexFiles []string) (index int, found bool) {
+	index = -1
 	for i, pgexFile := range pgexFiles {
-		if strings.Contains(pgexFile, q.pgexPointer) {
-			currentIndex = i
+		if pgexFile == q.sourcePath {
+			index, found = i, true
 		}
 	}
+	return index, found
+}
 
-	if currentIndex-1 >= 0 {
-		return loadQueryRun(pgexFiles[currentIndex-1])
+// isInRealHistory reports whether q corresponds to a file in the real
+// chronological _pgex history (as opposed to a --pgex bookmark file loaded
+// from outside it).
+func (q QueryRun) isInRealHistory() (bool, error) {
+	pgexFiles, err := getQueryRunEntries()
+	if err != nil {
+		return false, err
+	}
+
+	_, found := currentQueryRunIndex(q, pgexFiles)
+	return found, nil
+}
+
+func (q QueryRun) previousQueryRun() (QueryRun, bool, error) {
+	pgexFiles, err := getQueryRunEntries()
+	if err != nil {
+		return QueryRun{}, false, err
+	}
+
+	currentIndex, found := currentQueryRunIndex(q, pgexFiles)
+
+	if found && currentIndex-1 >= 0 {
+		qr, err := loadQueryRun(pgexFiles[currentIndex-1])
+		return qr, true, err
 	} else {
-		return q, nil
+		return q, false, nil
 	}
 }
 
-func (q QueryRun) nextQueryRun() (QueryRun, error) {
+var ErrNoNextQueryRun = errors.New("no next query run")
+
+func (q QueryRun) nextQueryRun() (QueryRun, bool, error) {
 	pgexFiles, err := getQueryRunEntries()
 	if err != nil {
-		return QueryRun{}, err
+		return QueryRun{}, false, err
 	}
 
-	var currentIndex int
-	for i, pgexFile := range pgexFiles {
-		if strings.Contains(pgexFile, q.pgexPointer) {
-			currentIndex = i
-		}
-	}
+	currentIndex, found := currentQueryRunIndex(q, pgexFiles)
 
-	if currentIndex+1 < len(pgexFiles) {
-		return loadQueryRun(pgexFiles[currentIndex+1])
+	if found && currentIndex+1 < len(pgexFiles) {
+		qr, err := loadQueryRun(pgexFiles[currentIndex+1])
+		return qr, true, err
 	} else {
-		return q, nil
+		return q, false, nil
 	}
 }
 
@@ -90,6 +119,11 @@ func latestQueryRun() (QueryRun, error) {
 
 func loadQueryRun(pgexFile string) (QueryRun, error) {
 	body, err := os.ReadFile(pgexFile)
+	if err != nil {
+		return QueryRun{}, err
+	}
+
+	sourcePath, err := filepath.Abs(pgexFile)
 	if err != nil {
 		return QueryRun{}, err
 	}
@@ -157,6 +191,7 @@ func loadQueryRun(pgexFile string) (QueryRun, error) {
 		query:            sql,
 		result:           result,
 		pgexPointer:      file,
+		sourcePath:       sourcePath,
 		settings:         settings,
 		originalFilename: originalFilename,
 		cancelled:        cancelled,
@@ -254,6 +289,9 @@ func (q *QueryRun) WritePgexFile(pgexDir string) error {
 
 	err := os.WriteFile(fullFilePath, contentBytes, 0666)
 	q.pgexPointer = fileName
+	if absPath, absErr := filepath.Abs(fullFilePath); absErr == nil {
+		q.sourcePath = absPath
+	}
 
 	return err
 }
