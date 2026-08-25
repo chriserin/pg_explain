@@ -1,6 +1,6 @@
 module github.com/chriserin/pg_explain
 
-go 1.26.3
+go 1.27.0
 
 require (
 	charm.land/bubbles/v2 v2.1.1
